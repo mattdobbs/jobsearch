@@ -1,0 +1,1071 @@
+# Employers whose own career sites are checked on every scan.
+#
+# This file is yours to edit. The app reads it at the start of each scan, so changes
+# take effect on the next check with no restart.
+#
+# Until you edit it, the app keeps this file in step with its own built-in list, so
+# an update can add employers. Once you change anything here the file is left alone.
+# Delete it to go back to the built-in list.
+#
+# Each [[employer]] has:
+#
+#   name      Company name as it should appear on cards.
+#   aliases   Other names the company posts under on job boards (optional).
+#   mode      "program" - every remote job the employer lists becomes a card, because
+#                         of the reason given below.
+#             "signal"  - a remote job becomes a card only when the posting's own text
+#                         welcomes neurodivergent or disabled applicants.
+#   kind      For program mode, what the reason rests on (optional):
+#               "program" (the default) - a neurodiversity hiring program
+#               "index"                 - a disability-inclusion index score
+#             Cards are labelled accordingly, so the two can be told apart.
+#   reason    Shown on the card as the reason the job is on your board.
+#   evidence  A link backing up the reason, shown next to it.
+#   ats       Which job system the career site runs on:
+#               "greenhouse"  needs  token   (boards.greenhouse.io/<token>)
+#               "lever"       needs  token   (jobs.lever.co/<token>)
+#               "ashby"       needs  token   (jobs.ashbyhq.com/<token>)
+#               "workday"     needs  host, tenant, site
+#                             (https://<host>/<site> is the public career site;
+#                              set public_base if the public address differs)
+#             Leave ats out for an employer with no readable career site: its jobs are
+#             then still recognised by name when they show up on a job board.
+#
+# Whatever the mode, a job is only ever shown when its listing says it is remote.
+
+# ---------------------------------------------------------------------------
+# 1. Neurodiversity @ Work Employer Roundtable
+#
+# Disability:IN's roundtable of employers "committed to hiring and supporting
+# neurodivergent employees". The names below are the roster on the page linked as
+# evidence, read in November 2026. Membership changes, so check the link.
+# ---------------------------------------------------------------------------
+
+[[employer]]
+name = "DXC Technology"
+aliases = ["DXC"]
+mode = "program"
+reason = "Member of Disability:IN's Neurodiversity @ Work Employer Roundtable, whose member corporations run hiring programs for neurodivergent people"
+evidence = "https://www.disabilityin.org/committees/neurodiversity-roundtable"
+ats = "workday"
+host = "dxctechnology.wd1.myworkdayjobs.com"
+tenant = "dxctechnology"
+site = "DXCJobs"
+
+[[employer]]
+name = "Salesforce"
+mode = "program"
+reason = "Member of Disability:IN's Neurodiversity @ Work Employer Roundtable, whose member corporations run hiring programs for neurodivergent people"
+evidence = "https://www.disabilityin.org/committees/neurodiversity-roundtable"
+ats = "workday"
+host = "salesforce.wd12.myworkdayjobs.com"
+tenant = "salesforce"
+site = "External_Career_Site"
+
+[[employer]]
+name = "HP"
+aliases = ["HP Inc", "Hewlett-Packard"]
+mode = "program"
+reason = "Member of Disability:IN's Neurodiversity @ Work Employer Roundtable, whose member corporations run hiring programs for neurodivergent people"
+evidence = "https://www.disabilityin.org/committees/neurodiversity-roundtable"
+ats = "workday"
+host = "hp.wd5.myworkdayjobs.com"
+tenant = "hp"
+site = "ExternalCareerSite"
+
+[[employer]]
+name = "Wells Fargo"
+mode = "program"
+reason = "Member of Disability:IN's Neurodiversity @ Work Employer Roundtable, whose member corporations run hiring programs for neurodivergent people"
+evidence = "https://www.disabilityin.org/committees/neurodiversity-roundtable"
+ats = "workday"
+host = "wd1.myworkdaysite.com"
+tenant = "wf"
+site = "WellsFargoJobs"
+public_base = "https://wd1.myworkdaysite.com/recruiting/wf/WellsFargoJobs"
+
+[[employer]]
+name = "Chevron"
+mode = "program"
+reason = "Member of Disability:IN's Neurodiversity @ Work Employer Roundtable, whose member corporations run hiring programs for neurodivergent people"
+evidence = "https://www.disabilityin.org/committees/neurodiversity-roundtable"
+ats = "workday"
+host = "chevron.wd5.myworkdayjobs.com"
+tenant = "chevron"
+site = "jobs"
+
+[[employer]]
+name = "Qualcomm"
+mode = "program"
+reason = "Member of Disability:IN's Neurodiversity @ Work Employer Roundtable, whose member corporations run hiring programs for neurodivergent people"
+evidence = "https://www.disabilityin.org/committees/neurodiversity-roundtable"
+ats = "workday"
+host = "qualcomm.wd12.myworkdayjobs.com"
+tenant = "qualcomm"
+site = "External"
+
+[[employer]]
+name = "Travelers"
+mode = "program"
+reason = "Member of Disability:IN's Neurodiversity @ Work Employer Roundtable, whose member corporations run hiring programs for neurodivergent people"
+evidence = "https://www.disabilityin.org/committees/neurodiversity-roundtable"
+ats = "workday"
+host = "travelers.wd5.myworkdayjobs.com"
+tenant = "travelers"
+site = "External"
+
+[[employer]]
+name = "Freddie Mac"
+mode = "program"
+reason = "Member of Disability:IN's Neurodiversity @ Work Employer Roundtable, whose member corporations run hiring programs for neurodivergent people"
+evidence = "https://www.disabilityin.org/committees/neurodiversity-roundtable"
+ats = "workday"
+host = "freddiemac.wd5.myworkdayjobs.com"
+tenant = "freddiemac"
+site = "External"
+
+[[employer]]
+name = "Bank of America"
+mode = "program"
+reason = "Member of Disability:IN's Neurodiversity @ Work Employer Roundtable, whose member corporations run hiring programs for neurodivergent people"
+evidence = "https://www.disabilityin.org/committees/neurodiversity-roundtable"
+ats = "workday"
+host = "ghr.wd1.myworkdayjobs.com"
+tenant = "ghr"
+site = "Lateral-US"
+
+[[employer]]
+name = "Biogen"
+mode = "program"
+reason = "Member of Disability:IN's Neurodiversity @ Work Employer Roundtable, whose member corporations run hiring programs for neurodivergent people"
+evidence = "https://www.disabilityin.org/committees/neurodiversity-roundtable"
+ats = "workday"
+host = "biibhr.wd3.myworkdayjobs.com"
+tenant = "biibhr"
+site = "external"
+
+[[employer]]
+name = "Boeing"
+aliases = ["The Boeing Company"]
+mode = "program"
+reason = "Member of Disability:IN's Neurodiversity @ Work Employer Roundtable, whose member corporations run hiring programs for neurodivergent people"
+evidence = "https://www.disabilityin.org/committees/neurodiversity-roundtable"
+ats = "workday"
+host = "boeing.wd1.myworkdayjobs.com"
+tenant = "boeing"
+site = "EXTERNAL_CAREERS"
+
+[[employer]]
+name = "General Dynamics Information Technology"
+aliases = ["GDIT", "General Dynamics"]
+mode = "program"
+reason = "Part of General Dynamics, a member of Disability:IN's Neurodiversity @ Work Employer Roundtable, whose member corporations run hiring programs for neurodivergent people"
+evidence = "https://www.disabilityin.org/committees/neurodiversity-roundtable"
+ats = "workday"
+host = "gdit.wd5.myworkdayjobs.com"
+tenant = "gdit"
+site = "External_Career_Site"
+
+[[employer]]
+name = "Johnson & Johnson"
+aliases = ["J&J"]
+mode = "program"
+reason = "Member of Disability:IN's Neurodiversity @ Work Employer Roundtable, whose member corporations run hiring programs for neurodivergent people"
+evidence = "https://www.disabilityin.org/committees/neurodiversity-roundtable"
+ats = "workday"
+host = "jj.wd5.myworkdayjobs.com"
+tenant = "jj"
+site = "JJ"
+
+[[employer]]
+name = "Pfizer"
+mode = "program"
+reason = "Member of Disability:IN's Neurodiversity @ Work Employer Roundtable, whose member corporations run hiring programs for neurodivergent people"
+evidence = "https://www.disabilityin.org/committees/neurodiversity-roundtable"
+ats = "workday"
+host = "pfizer.wd1.myworkdayjobs.com"
+tenant = "pfizer"
+site = "PfizerCareers"
+
+[[employer]]
+name = "Prudential"
+aliases = ["Prudential Financial"]
+mode = "program"
+reason = "Member of Disability:IN's Neurodiversity @ Work Employer Roundtable, whose member corporations run hiring programs for neurodivergent people"
+evidence = "https://www.disabilityin.org/committees/neurodiversity-roundtable"
+ats = "workday"
+host = "pru.wd5.myworkdayjobs.com"
+tenant = "pru"
+site = "Careers"
+
+[[employer]]
+name = "U.S. Bank"
+aliases = ["US Bank", "U.S. Bancorp"]
+mode = "program"
+reason = "Member of Disability:IN's Neurodiversity @ Work Employer Roundtable, whose member corporations run hiring programs for neurodivergent people"
+evidence = "https://www.disabilityin.org/committees/neurodiversity-roundtable"
+ats = "workday"
+host = "usbank.wd1.myworkdayjobs.com"
+tenant = "usbank"
+site = "US_Bank_Careers"
+
+[[employer]]
+name = "Thermo Fisher Scientific"
+aliases = ["Thermo Fisher", "Thermofisher"]
+mode = "program"
+reason = "Member of Disability:IN's Neurodiversity @ Work Employer Roundtable, whose member corporations run hiring programs for neurodivergent people"
+evidence = "https://www.disabilityin.org/committees/neurodiversity-roundtable"
+ats = "workday"
+host = "thermofisher.wd5.myworkdayjobs.com"
+tenant = "thermofisher"
+site = "ThermoFisherCareers"
+
+[[employer]]
+name = "Southwest Airlines"
+aliases = ["Southwest"]
+mode = "program"
+reason = "Member of Disability:IN's Neurodiversity @ Work Employer Roundtable, whose member corporations run hiring programs for neurodivergent people"
+evidence = "https://www.disabilityin.org/committees/neurodiversity-roundtable"
+ats = "workday"
+host = "swa.wd1.myworkdayjobs.com"
+tenant = "swa"
+site = "external"
+
+# Roundtable members whose career sites this app cannot read directly. Listing them
+# here means their jobs are still recognised when they appear on a remote job board.
+
+[[employer]]
+name = "Microsoft"
+mode = "program"
+reason = "Member of Disability:IN's Neurodiversity @ Work Employer Roundtable, whose member corporations run hiring programs for neurodivergent people"
+evidence = "https://www.disabilityin.org/committees/neurodiversity-roundtable"
+
+[[employer]]
+name = "SAP"
+mode = "program"
+reason = "Member of Disability:IN's Neurodiversity @ Work Employer Roundtable, whose member corporations run hiring programs for neurodivergent people"
+evidence = "https://www.disabilityin.org/committees/neurodiversity-roundtable"
+
+[[employer]]
+name = "EY"
+aliases = ["Ernst & Young", "Ernst and Young"]
+mode = "program"
+reason = "Member of Disability:IN's Neurodiversity @ Work Employer Roundtable, whose member corporations run hiring programs for neurodivergent people"
+evidence = "https://www.disabilityin.org/committees/neurodiversity-roundtable"
+
+[[employer]]
+name = "JPMorgan Chase"
+aliases = ["JPMorganChase", "JPMorgan Chase & Co", "JP Morgan", "J.P. Morgan"]
+mode = "program"
+reason = "Member of Disability:IN's Neurodiversity @ Work Employer Roundtable, whose member corporations run hiring programs for neurodivergent people"
+evidence = "https://www.disabilityin.org/committees/neurodiversity-roundtable"
+
+[[employer]]
+name = "Google"
+mode = "program"
+reason = "Member of Disability:IN's Neurodiversity @ Work Employer Roundtable, whose member corporations run hiring programs for neurodivergent people"
+evidence = "https://www.disabilityin.org/committees/neurodiversity-roundtable"
+
+[[employer]]
+name = "IBM"
+mode = "program"
+reason = "Member of Disability:IN's Neurodiversity @ Work Employer Roundtable, whose member corporations run hiring programs for neurodivergent people"
+evidence = "https://www.disabilityin.org/committees/neurodiversity-roundtable"
+
+[[employer]]
+name = "Deloitte"
+mode = "program"
+reason = "Member of Disability:IN's Neurodiversity @ Work Employer Roundtable, whose member corporations run hiring programs for neurodivergent people"
+evidence = "https://www.disabilityin.org/committees/neurodiversity-roundtable"
+
+[[employer]]
+name = "KPMG"
+mode = "program"
+reason = "Member of Disability:IN's Neurodiversity @ Work Employer Roundtable, whose member corporations run hiring programs for neurodivergent people"
+evidence = "https://www.disabilityin.org/committees/neurodiversity-roundtable"
+
+[[employer]]
+name = "Lockheed Martin"
+mode = "program"
+reason = "Member of Disability:IN's Neurodiversity @ Work Employer Roundtable, whose member corporations run hiring programs for neurodivergent people"
+evidence = "https://www.disabilityin.org/committees/neurodiversity-roundtable"
+
+[[employer]]
+name = "Dell Technologies"
+aliases = ["Dell"]
+mode = "program"
+reason = "Member of Disability:IN's Neurodiversity @ Work Employer Roundtable, whose member corporations run hiring programs for neurodivergent people"
+evidence = "https://www.disabilityin.org/committees/neurodiversity-roundtable"
+
+[[employer]]
+name = "Charles Schwab"
+aliases = ["Schwab"]
+mode = "program"
+reason = "Member of Disability:IN's Neurodiversity @ Work Employer Roundtable, whose member corporations run hiring programs for neurodivergent people"
+evidence = "https://www.disabilityin.org/committees/neurodiversity-roundtable"
+
+[[employer]]
+name = "Cummins"
+mode = "program"
+reason = "Member of Disability:IN's Neurodiversity @ Work Employer Roundtable, whose member corporations run hiring programs for neurodivergent people"
+evidence = "https://www.disabilityin.org/committees/neurodiversity-roundtable"
+
+[[employer]]
+name = "Emerson"
+aliases = ["Emerson Electric"]
+mode = "program"
+reason = "Member of Disability:IN's Neurodiversity @ Work Employer Roundtable, whose member corporations run hiring programs for neurodivergent people"
+evidence = "https://www.disabilityin.org/committees/neurodiversity-roundtable"
+
+[[employer]]
+name = "Hearst"
+mode = "program"
+reason = "Member of Disability:IN's Neurodiversity @ Work Employer Roundtable, whose member corporations run hiring programs for neurodivergent people"
+evidence = "https://www.disabilityin.org/committees/neurodiversity-roundtable"
+
+[[employer]]
+name = "Optum"
+mode = "program"
+reason = "Member of Disability:IN's Neurodiversity @ Work Employer Roundtable, whose member corporations run hiring programs for neurodivergent people"
+evidence = "https://www.disabilityin.org/committees/neurodiversity-roundtable"
+
+[[employer]]
+name = "SAS"
+aliases = ["SAS Institute"]
+mode = "program"
+reason = "Member of Disability:IN's Neurodiversity @ Work Employer Roundtable, whose member corporations run hiring programs for neurodivergent people"
+evidence = "https://www.disabilityin.org/committees/neurodiversity-roundtable"
+
+[[employer]]
+name = "Ubisoft"
+mode = "program"
+reason = "Member of Disability:IN's Neurodiversity @ Work Employer Roundtable, whose member corporations run hiring programs for neurodivergent people"
+evidence = "https://www.disabilityin.org/committees/neurodiversity-roundtable"
+
+[[employer]]
+name = "Walgreens"
+mode = "program"
+reason = "Member of Disability:IN's Neurodiversity @ Work Employer Roundtable, whose member corporations run hiring programs for neurodivergent people"
+evidence = "https://www.disabilityin.org/committees/neurodiversity-roundtable"
+
+[[employer]]
+name = "WTW"
+aliases = ["Willis Towers Watson"]
+mode = "program"
+reason = "Member of Disability:IN's Neurodiversity @ Work Employer Roundtable, whose member corporations run hiring programs for neurodivergent people"
+evidence = "https://www.disabilityin.org/committees/neurodiversity-roundtable"
+
+[[employer]]
+name = "VMware"
+mode = "program"
+reason = "Member of Disability:IN's Neurodiversity @ Work Employer Roundtable, whose member corporations run hiring programs for neurodivergent people"
+evidence = "https://www.disabilityin.org/committees/neurodiversity-roundtable"
+
+[[employer]]
+name = "auticon"
+mode = "program"
+reason = "Social enterprise in Disability:IN's Neurodiversity @ Work Employer Roundtable, built around employing neurodivergent people"
+evidence = "https://www.disabilityin.org/committees/neurodiversity-roundtable"
+
+[[employer]]
+name = "Ultranauts"
+mode = "program"
+reason = "Social enterprise in Disability:IN's Neurodiversity @ Work Employer Roundtable, built around employing neurodivergent people"
+evidence = "https://www.disabilityin.org/committees/neurodiversity-roundtable"
+
+[[employer]]
+name = "Aspiritech"
+mode = "program"
+reason = "Social enterprise in Disability:IN's Neurodiversity @ Work Employer Roundtable, built around employing neurodivergent people"
+evidence = "https://www.disabilityin.org/committees/neurodiversity-roundtable"
+
+[[employer]]
+name = "Autonomy Works"
+aliases = ["AutonomyWorks"]
+mode = "program"
+reason = "Social enterprise in Disability:IN's Neurodiversity @ Work Employer Roundtable, built around employing neurodivergent people"
+evidence = "https://www.disabilityin.org/committees/neurodiversity-roundtable"
+
+[[employer]]
+name = "Iterators"
+aliases = ["Iterators LLC"]
+mode = "program"
+reason = "Social enterprise in Disability:IN's Neurodiversity @ Work Employer Roundtable, built around employing neurodivergent people"
+evidence = "https://www.disabilityin.org/committees/neurodiversity-roundtable"
+
+[[employer]]
+name = "Spectrum Designs"
+aliases = ["Spectrum Designs Foundation"]
+mode = "program"
+reason = "Social enterprise in Disability:IN's Neurodiversity @ Work Employer Roundtable, built around employing neurodivergent people"
+evidence = "https://www.disabilityin.org/committees/neurodiversity-roundtable"
+
+[[employer]]
+name = "CAI"
+aliases = ["Computer Aid"]
+mode = "program"
+reason = "Strategic partner of Disability:IN's Neurodiversity @ Work Employer Roundtable (a neurodiversity employment specialist)"
+evidence = "https://www.disabilityin.org/committees/neurodiversity-roundtable"
+
+[[employer]]
+name = "Rangam"
+mode = "program"
+reason = "Strategic partner of Disability:IN's Neurodiversity @ Work Employer Roundtable (a neurodiversity employment specialist)"
+evidence = "https://www.disabilityin.org/committees/neurodiversity-roundtable"
+
+[[employer]]
+name = "Integrate"
+aliases = ["Integrate Autism Employment Advisors"]
+mode = "program"
+reason = "Strategic partner of Disability:IN's Neurodiversity @ Work Employer Roundtable (a neurodiversity employment specialist)"
+evidence = "https://www.disabilityin.org/committees/neurodiversity-roundtable"
+
+# ---------------------------------------------------------------------------
+# 2. Disability Equality Index
+#
+# Employers named a "Best Place to Work for Disability Inclusion" (a score of 80 or
+# more out of 100) on the Disability Equality Index run by Disability:IN and the
+# American Association of People with Disabilities. The index measures disability
+# inclusion across a whole company: hiring, accommodations, accessibility, benefits.
+# It is a broader and weaker claim than the roundtable's: it does not mean the
+# employer runs a neurodiversity hiring program.
+#
+# The scores are from 2024, the most recent year for which a list of scores could be
+# found. Disability:IN no longer publishes one. The evidence link is DirectEmployers
+# Association's list of its members' 2024 scores.
+# ---------------------------------------------------------------------------
+
+[[employer]]
+name = "Accenture"
+mode = "program"
+kind = "index"
+reason = "Scored 100 on the 2024 Disability Equality Index, which named it a Best Place to Work for Disability Inclusion"
+evidence = "https://directemployers.org/2024/07/25/the-disability-inclusive-elite-2024-disability-equality-index-honors-200-de-members/"
+ats = "workday"
+host = "accenture.wd103.myworkdayjobs.com"
+tenant = "accenture"
+site = "AccentureCareers"
+
+[[employer]]
+name = "Ally Financial"
+aliases = ["Ally"]
+mode = "program"
+kind = "index"
+reason = "Scored 100 on the 2024 Disability Equality Index, which named it a Best Place to Work for Disability Inclusion"
+evidence = "https://directemployers.org/2024/07/25/the-disability-inclusive-elite-2024-disability-equality-index-honors-200-de-members/"
+ats = "workday"
+host = "ally.wd1.myworkdayjobs.com"
+tenant = "ally"
+site = "Ally"
+
+[[employer]]
+name = "Amgen"
+mode = "program"
+kind = "index"
+reason = "Scored 100 on the 2024 Disability Equality Index, which named it a Best Place to Work for Disability Inclusion"
+evidence = "https://directemployers.org/2024/07/25/the-disability-inclusive-elite-2024-disability-equality-index-honors-200-de-members/"
+ats = "workday"
+host = "amgen.wd1.myworkdayjobs.com"
+tenant = "amgen"
+site = "Careers"
+
+[[employer]]
+name = "AT&T"
+mode = "program"
+kind = "index"
+reason = "Scored 100 on the 2024 Disability Equality Index, which named it a Best Place to Work for Disability Inclusion"
+evidence = "https://directemployers.org/2024/07/25/the-disability-inclusive-elite-2024-disability-equality-index-honors-200-de-members/"
+ats = "workday"
+host = "att.wd1.myworkdayjobs.com"
+tenant = "att"
+site = "ATTGeneral"
+
+[[employer]]
+name = "BlackRock"
+mode = "program"
+kind = "index"
+reason = "Scored 100 on the 2024 Disability Equality Index, which named it a Best Place to Work for Disability Inclusion"
+evidence = "https://directemployers.org/2024/07/25/the-disability-inclusive-elite-2024-disability-equality-index-honors-200-de-members/"
+ats = "workday"
+host = "blackrock.wd1.myworkdayjobs.com"
+tenant = "blackrock"
+site = "BlackRock_Professional"
+
+[[employer]]
+name = "BMO"
+aliases = ["BMO Bank", "BMO Financial Group"]
+mode = "program"
+kind = "index"
+reason = "Scored 100 on the 2024 Disability Equality Index, which named it a Best Place to Work for Disability Inclusion"
+evidence = "https://directemployers.org/2024/07/25/the-disability-inclusive-elite-2024-disability-equality-index-honors-200-de-members/"
+ats = "workday"
+host = "bmo.wd3.myworkdayjobs.com"
+tenant = "bmo"
+site = "External"
+
+[[employer]]
+name = "Bristol Myers Squibb"
+aliases = ["BMS"]
+mode = "program"
+kind = "index"
+reason = "Scored 100 on the 2024 Disability Equality Index, which named it a Best Place to Work for Disability Inclusion"
+evidence = "https://directemployers.org/2024/07/25/the-disability-inclusive-elite-2024-disability-equality-index-honors-200-de-members/"
+ats = "workday"
+host = "bristolmyerssquibb.wd5.myworkdayjobs.com"
+tenant = "bristolmyerssquibb"
+site = "BMS"
+
+[[employer]]
+name = "Centene"
+aliases = ["Centene Corporation"]
+mode = "program"
+kind = "index"
+reason = "Scored 100 on the 2024 Disability Equality Index, which named it a Best Place to Work for Disability Inclusion"
+evidence = "https://directemployers.org/2024/07/25/the-disability-inclusive-elite-2024-disability-equality-index-honors-200-de-members/"
+ats = "workday"
+host = "centene.wd5.myworkdayjobs.com"
+tenant = "centene"
+site = "Centene_External"
+
+[[employer]]
+name = "Cigna"
+aliases = ["The Cigna Group", "Cigna Healthcare"]
+mode = "program"
+kind = "index"
+reason = "Scored 100 on the 2024 Disability Equality Index, which named it a Best Place to Work for Disability Inclusion"
+evidence = "https://directemployers.org/2024/07/25/the-disability-inclusive-elite-2024-disability-equality-index-honors-200-de-members/"
+ats = "workday"
+host = "cigna.wd5.myworkdayjobs.com"
+tenant = "cigna"
+site = "cignacareers"
+
+[[employer]]
+name = "Citi"
+aliases = ["Citigroup", "Citibank"]
+mode = "program"
+kind = "index"
+reason = "Scored 100 on the 2024 Disability Equality Index, which named it a Best Place to Work for Disability Inclusion"
+evidence = "https://directemployers.org/2024/07/25/the-disability-inclusive-elite-2024-disability-equality-index-honors-200-de-members/"
+ats = "workday"
+host = "citi.wd5.myworkdayjobs.com"
+tenant = "citi"
+site = "2"
+
+[[employer]]
+name = "CVS Health"
+aliases = ["CVS"]
+mode = "program"
+kind = "index"
+reason = "Scored 100 on the 2024 Disability Equality Index, which named it a Best Place to Work for Disability Inclusion"
+evidence = "https://directemployers.org/2024/07/25/the-disability-inclusive-elite-2024-disability-equality-index-honors-200-de-members/"
+ats = "workday"
+host = "cvshealth.wd1.myworkdayjobs.com"
+tenant = "cvshealth"
+site = "CVS_Health_Careers"
+
+[[employer]]
+name = "Dow"
+aliases = ["Dow Chemical"]
+mode = "program"
+kind = "index"
+reason = "Scored 100 on the 2024 Disability Equality Index, which named it a Best Place to Work for Disability Inclusion"
+evidence = "https://directemployers.org/2024/07/25/the-disability-inclusive-elite-2024-disability-equality-index-honors-200-de-members/"
+ats = "workday"
+host = "dow.wd1.myworkdayjobs.com"
+tenant = "dow"
+site = "ExternalCareers"
+
+[[employer]]
+name = "DuPont"
+mode = "program"
+kind = "index"
+reason = "Scored 100 on the 2024 Disability Equality Index, which named it a Best Place to Work for Disability Inclusion"
+evidence = "https://directemployers.org/2024/07/25/the-disability-inclusive-elite-2024-disability-equality-index-honors-200-de-members/"
+ats = "workday"
+host = "dupont.wd5.myworkdayjobs.com"
+tenant = "dupont"
+site = "Jobs"
+
+[[employer]]
+name = "Elevance Health"
+mode = "program"
+kind = "index"
+reason = "Scored 100 on the 2024 Disability Equality Index, which named it a Best Place to Work for Disability Inclusion"
+evidence = "https://directemployers.org/2024/07/25/the-disability-inclusive-elite-2024-disability-equality-index-honors-200-de-members/"
+ats = "workday"
+host = "elevancehealth.wd1.myworkdayjobs.com"
+tenant = "elevancehealth"
+site = "ANT"
+
+[[employer]]
+name = "Fifth Third Bank"
+aliases = ["Fifth Third"]
+mode = "program"
+kind = "index"
+reason = "Scored 100 on the 2024 Disability Equality Index, which named it a Best Place to Work for Disability Inclusion"
+evidence = "https://directemployers.org/2024/07/25/the-disability-inclusive-elite-2024-disability-equality-index-honors-200-de-members/"
+ats = "workday"
+host = "fifththird.wd5.myworkdayjobs.com"
+tenant = "fifththird"
+site = "53careers"
+
+[[employer]]
+name = "Fiserv"
+mode = "program"
+kind = "index"
+reason = "Scored 100 on the 2024 Disability Equality Index, which named it a Best Place to Work for Disability Inclusion"
+evidence = "https://directemployers.org/2024/07/25/the-disability-inclusive-elite-2024-disability-equality-index-honors-200-de-members/"
+ats = "workday"
+host = "fiserv.wd5.myworkdayjobs.com"
+tenant = "fiserv"
+site = "EXT"
+
+[[employer]]
+name = "GE Aerospace"
+mode = "program"
+kind = "index"
+reason = "Scored 100 on the 2024 Disability Equality Index, which named it a Best Place to Work for Disability Inclusion"
+evidence = "https://directemployers.org/2024/07/25/the-disability-inclusive-elite-2024-disability-equality-index-honors-200-de-members/"
+ats = "workday"
+host = "geaerospace.wd5.myworkdayjobs.com"
+tenant = "geaerospace"
+site = "GE_ExternalSite"
+
+[[employer]]
+name = "GE HealthCare"
+mode = "program"
+kind = "index"
+reason = "Scored 100 on the 2024 Disability Equality Index, which named it a Best Place to Work for Disability Inclusion"
+evidence = "https://directemployers.org/2024/07/25/the-disability-inclusive-elite-2024-disability-equality-index-honors-200-de-members/"
+ats = "workday"
+host = "gehc.wd5.myworkdayjobs.com"
+tenant = "gehc"
+site = "GEHC_ExternalSite"
+
+[[employer]]
+name = "General Motors"
+aliases = ["GM"]
+mode = "program"
+kind = "index"
+reason = "Scored 100 on the 2024 Disability Equality Index, which named it a Best Place to Work for Disability Inclusion"
+evidence = "https://directemployers.org/2024/07/25/the-disability-inclusive-elite-2024-disability-equality-index-honors-200-de-members/"
+ats = "workday"
+host = "generalmotors.wd5.myworkdayjobs.com"
+tenant = "generalmotors"
+site = "Careers_GM"
+
+[[employer]]
+name = "Highmark Health"
+aliases = ["Highmark"]
+mode = "program"
+kind = "index"
+reason = "Scored 100 on the 2024 Disability Equality Index, which named it a Best Place to Work for Disability Inclusion"
+evidence = "https://directemployers.org/2024/07/25/the-disability-inclusive-elite-2024-disability-equality-index-honors-200-de-members/"
+ats = "workday"
+host = "highmarkhealth.wd1.myworkdayjobs.com"
+tenant = "highmarkhealth"
+site = "highmark"
+
+[[employer]]
+name = "Humana"
+mode = "program"
+kind = "index"
+reason = "Scored 100 on the 2024 Disability Equality Index, which named it a Best Place to Work for Disability Inclusion"
+evidence = "https://directemployers.org/2024/07/25/the-disability-inclusive-elite-2024-disability-equality-index-honors-200-de-members/"
+ats = "workday"
+host = "humana.wd5.myworkdayjobs.com"
+tenant = "humana"
+site = "Humana_External_Career_Site"
+
+[[employer]]
+name = "Huntington Bank"
+aliases = ["Huntington", "Huntington National Bank"]
+mode = "program"
+kind = "index"
+reason = "Scored 100 on the 2024 Disability Equality Index, which named it a Best Place to Work for Disability Inclusion"
+evidence = "https://directemployers.org/2024/07/25/the-disability-inclusive-elite-2024-disability-equality-index-honors-200-de-members/"
+ats = "workday"
+host = "huntington.wd12.myworkdayjobs.com"
+tenant = "huntington"
+site = "HNBcareers"
+
+[[employer]]
+name = "Intel"
+mode = "program"
+kind = "index"
+reason = "Scored 100 on the 2024 Disability Equality Index, which named it a Best Place to Work for Disability Inclusion"
+evidence = "https://directemployers.org/2024/07/25/the-disability-inclusive-elite-2024-disability-equality-index-honors-200-de-members/"
+ats = "workday"
+host = "intel.wd1.myworkdayjobs.com"
+tenant = "intel"
+site = "External"
+
+[[employer]]
+name = "Labcorp"
+mode = "program"
+kind = "index"
+reason = "Scored 100 on the 2024 Disability Equality Index, which named it a Best Place to Work for Disability Inclusion"
+evidence = "https://directemployers.org/2024/07/25/the-disability-inclusive-elite-2024-disability-equality-index-honors-200-de-members/"
+ats = "workday"
+host = "labcorp.wd1.myworkdayjobs.com"
+tenant = "labcorp"
+site = "External"
+
+[[employer]]
+name = "Leidos"
+mode = "program"
+kind = "index"
+reason = "Scored 100 on the 2024 Disability Equality Index, which named it a Best Place to Work for Disability Inclusion"
+evidence = "https://directemployers.org/2024/07/25/the-disability-inclusive-elite-2024-disability-equality-index-honors-200-de-members/"
+ats = "workday"
+host = "leidos.wd5.myworkdayjobs.com"
+tenant = "leidos"
+site = "External"
+
+[[employer]]
+name = "M&T Bank"
+mode = "program"
+kind = "index"
+reason = "Scored 100 on the 2024 Disability Equality Index, which named it a Best Place to Work for Disability Inclusion"
+evidence = "https://directemployers.org/2024/07/25/the-disability-inclusive-elite-2024-disability-equality-index-honors-200-de-members/"
+ats = "workday"
+host = "mtb.wd5.myworkdayjobs.com"
+tenant = "mtb"
+site = "MTB"
+
+[[employer]]
+name = "Medtronic"
+mode = "program"
+kind = "index"
+reason = "Scored 100 on the 2024 Disability Equality Index, which named it a Best Place to Work for Disability Inclusion"
+evidence = "https://directemployers.org/2024/07/25/the-disability-inclusive-elite-2024-disability-equality-index-honors-200-de-members/"
+ats = "workday"
+host = "medtronic.wd1.myworkdayjobs.com"
+tenant = "medtronic"
+site = "MedtronicCareers"
+
+[[employer]]
+name = "Micron Technology"
+aliases = ["Micron"]
+mode = "program"
+kind = "index"
+reason = "Scored 100 on the 2024 Disability Equality Index, which named it a Best Place to Work for Disability Inclusion"
+evidence = "https://directemployers.org/2024/07/25/the-disability-inclusive-elite-2024-disability-equality-index-honors-200-de-members/"
+ats = "workday"
+host = "micron.wd1.myworkdayjobs.com"
+tenant = "micron"
+site = "External"
+
+[[employer]]
+name = "MITRE"
+mode = "program"
+kind = "index"
+reason = "Scored 100 on the 2024 Disability Equality Index, which named it a Best Place to Work for Disability Inclusion"
+evidence = "https://directemployers.org/2024/07/25/the-disability-inclusive-elite-2024-disability-equality-index-honors-200-de-members/"
+ats = "workday"
+host = "mitre.wd5.myworkdayjobs.com"
+tenant = "mitre"
+site = "MITRE"
+
+[[employer]]
+name = "Nike"
+mode = "program"
+kind = "index"
+reason = "Scored 100 on the 2024 Disability Equality Index, which named it a Best Place to Work for Disability Inclusion"
+evidence = "https://directemployers.org/2024/07/25/the-disability-inclusive-elite-2024-disability-equality-index-honors-200-de-members/"
+ats = "workday"
+host = "nike.wd1.myworkdayjobs.com"
+tenant = "nike"
+site = "nke"
+
+[[employer]]
+name = "Northrop Grumman"
+mode = "program"
+kind = "index"
+reason = "Scored 100 on the 2024 Disability Equality Index, which named it a Best Place to Work for Disability Inclusion"
+evidence = "https://directemployers.org/2024/07/25/the-disability-inclusive-elite-2024-disability-equality-index-honors-200-de-members/"
+ats = "workday"
+host = "ngc.wd1.myworkdayjobs.com"
+tenant = "ngc"
+site = "Northrop_Grumman_External_Site"
+
+[[employer]]
+name = "PNC"
+aliases = ["PNC Bank", "PNC Financial Services"]
+mode = "program"
+kind = "index"
+reason = "Scored 100 on the 2024 Disability Equality Index, which named it a Best Place to Work for Disability Inclusion"
+evidence = "https://directemployers.org/2024/07/25/the-disability-inclusive-elite-2024-disability-equality-index-honors-200-de-members/"
+ats = "workday"
+host = "pnc.wd5.myworkdayjobs.com"
+tenant = "pnc"
+site = "External"
+
+[[employer]]
+name = "PwC"
+aliases = ["PricewaterhouseCoopers"]
+mode = "program"
+kind = "index"
+reason = "Scored 100 on the 2024 Disability Equality Index, which named it a Best Place to Work for Disability Inclusion"
+evidence = "https://directemployers.org/2024/07/25/the-disability-inclusive-elite-2024-disability-equality-index-honors-200-de-members/"
+ats = "workday"
+host = "pwc.wd3.myworkdayjobs.com"
+tenant = "pwc"
+site = "Global_Experienced_Careers"
+
+[[employer]]
+name = "RTX"
+aliases = ["Raytheon", "Raytheon Technologies"]
+mode = "program"
+kind = "index"
+reason = "Scored 100 on the 2024 Disability Equality Index, which named it a Best Place to Work for Disability Inclusion"
+evidence = "https://directemployers.org/2024/07/25/the-disability-inclusive-elite-2024-disability-equality-index-honors-200-de-members/"
+ats = "workday"
+host = "globalhr.wd5.myworkdayjobs.com"
+tenant = "globalhr"
+site = "REC_RTX_Ext_Gateway"
+
+[[employer]]
+name = "S&P Global"
+mode = "program"
+kind = "index"
+reason = "Scored 100 on the 2024 Disability Equality Index, which named it a Best Place to Work for Disability Inclusion"
+evidence = "https://directemployers.org/2024/07/25/the-disability-inclusive-elite-2024-disability-equality-index-honors-200-de-members/"
+ats = "workday"
+host = "spgi.wd5.myworkdayjobs.com"
+tenant = "spgi"
+site = "SPGI_Careers"
+
+[[employer]]
+name = "Sanofi"
+mode = "program"
+kind = "index"
+reason = "Scored 100 on the 2024 Disability Equality Index, which named it a Best Place to Work for Disability Inclusion"
+evidence = "https://directemployers.org/2024/07/25/the-disability-inclusive-elite-2024-disability-equality-index-honors-200-de-members/"
+ats = "workday"
+host = "sanofi.wd3.myworkdayjobs.com"
+tenant = "sanofi"
+site = "SanofiCareers"
+
+[[employer]]
+name = "Shell"
+mode = "program"
+kind = "index"
+reason = "Scored 100 on the 2024 Disability Equality Index, which named it a Best Place to Work for Disability Inclusion"
+evidence = "https://directemployers.org/2024/07/25/the-disability-inclusive-elite-2024-disability-equality-index-honors-200-de-members/"
+ats = "workday"
+host = "shell.wd3.myworkdayjobs.com"
+tenant = "shell"
+site = "ShellCareers"
+
+[[employer]]
+name = "Sony Pictures Entertainment"
+aliases = ["Sony Pictures"]
+mode = "program"
+kind = "index"
+reason = "Scored 100 on the 2024 Disability Equality Index, which named it a Best Place to Work for Disability Inclusion"
+evidence = "https://directemployers.org/2024/07/25/the-disability-inclusive-elite-2024-disability-equality-index-honors-200-de-members/"
+ats = "workday"
+host = "spe.wd1.myworkdayjobs.com"
+tenant = "spe"
+site = "SonyPicturesEntertainment"
+
+[[employer]]
+name = "Target"
+mode = "program"
+kind = "index"
+reason = "Scored 100 on the 2024 Disability Equality Index, which named it a Best Place to Work for Disability Inclusion"
+evidence = "https://directemployers.org/2024/07/25/the-disability-inclusive-elite-2024-disability-equality-index-honors-200-de-members/"
+ats = "workday"
+host = "target.wd5.myworkdayjobs.com"
+tenant = "target"
+site = "targetcareers"
+
+[[employer]]
+name = "TD Bank"
+aliases = ["TD"]
+mode = "program"
+kind = "index"
+reason = "Scored 100 on the 2024 Disability Equality Index, which named it a Best Place to Work for Disability Inclusion"
+evidence = "https://directemployers.org/2024/07/25/the-disability-inclusive-elite-2024-disability-equality-index-honors-200-de-members/"
+ats = "workday"
+host = "td.wd3.myworkdayjobs.com"
+tenant = "td"
+site = "TD_Bank_Careers"
+
+[[employer]]
+name = "The Hartford"
+mode = "program"
+kind = "index"
+reason = "Scored 100 on the 2024 Disability Equality Index, which named it a Best Place to Work for Disability Inclusion"
+evidence = "https://directemployers.org/2024/07/25/the-disability-inclusive-elite-2024-disability-equality-index-honors-200-de-members/"
+ats = "workday"
+host = "thehartford.wd5.myworkdayjobs.com"
+tenant = "thehartford"
+site = "Careers_External"
+
+[[employer]]
+name = "TIAA"
+mode = "program"
+kind = "index"
+reason = "Scored 100 on the 2024 Disability Equality Index, which named it a Best Place to Work for Disability Inclusion"
+evidence = "https://directemployers.org/2024/07/25/the-disability-inclusive-elite-2024-disability-equality-index-honors-200-de-members/"
+ats = "workday"
+host = "tiaa.wd1.myworkdayjobs.com"
+tenant = "tiaa"
+site = "Search"
+
+[[employer]]
+name = "Unum"
+mode = "program"
+kind = "index"
+reason = "Scored 100 on the 2024 Disability Equality Index, which named it a Best Place to Work for Disability Inclusion"
+evidence = "https://directemployers.org/2024/07/25/the-disability-inclusive-elite-2024-disability-equality-index-honors-200-de-members/"
+ats = "workday"
+host = "unum.wd1.myworkdayjobs.com"
+tenant = "unum"
+site = "External"
+
+[[employer]]
+name = "USAA"
+mode = "program"
+kind = "index"
+reason = "Scored 100 on the 2024 Disability Equality Index, which named it a Best Place to Work for Disability Inclusion"
+evidence = "https://directemployers.org/2024/07/25/the-disability-inclusive-elite-2024-disability-equality-index-honors-200-de-members/"
+ats = "workday"
+host = "usaa.wd1.myworkdayjobs.com"
+tenant = "usaa"
+site = "USAAJOBSWD"
+
+[[employer]]
+name = "The Walt Disney Company"
+aliases = ["Disney"]
+mode = "program"
+kind = "index"
+reason = "Scored 100 on the 2024 Disability Equality Index, which named it a Best Place to Work for Disability Inclusion"
+evidence = "https://directemployers.org/2024/07/25/the-disability-inclusive-elite-2024-disability-equality-index-honors-200-de-members/"
+ats = "workday"
+host = "disney.wd5.myworkdayjobs.com"
+tenant = "disney"
+site = "disneycareer"
+
+[[employer]]
+name = "Regions Bank"
+aliases = ["Regions"]
+mode = "program"
+kind = "index"
+reason = "Scored 90 on the 2024 Disability Equality Index, which named it a Best Place to Work for Disability Inclusion"
+evidence = "https://directemployers.org/2024/07/25/the-disability-inclusive-elite-2024-disability-equality-index-honors-200-de-members/"
+ats = "workday"
+host = "regions.wd5.myworkdayjobs.com"
+tenant = "regions"
+site = "Regions_Careers"
+
+[[employer]]
+name = "Guardian Life"
+aliases = ["Guardian"]
+mode = "program"
+kind = "index"
+reason = "Scored 80 on the 2024 Disability Equality Index, which named it a Best Place to Work for Disability Inclusion"
+evidence = "https://directemployers.org/2024/07/25/the-disability-inclusive-elite-2024-disability-equality-index-honors-200-de-members/"
+ats = "workday"
+host = "guardianlife.wd5.myworkdayjobs.com"
+tenant = "guardianlife"
+site = "Guardian-Life-Careers"
+
+[[employer]]
+name = "GitLab"
+mode = "program"
+kind = "index"
+reason = "Scored 80 on the 2024 Disability Equality Index, which named it a Best Place to Work for Disability Inclusion"
+evidence = "https://directemployers.org/2024/07/25/the-disability-inclusive-elite-2024-disability-equality-index-honors-200-de-members/"
+ats = "greenhouse"
+token = "gitlab"
+
+# ---------------------------------------------------------------------------
+# 3. Career sites checked for postings that say so themselves.
+#
+# Nothing is assumed about these employers. A remote job from one of them becomes a
+# card only when the posting's own text welcomes neurodivergent or disabled
+# applicants, and the card quotes the sentence so you can judge it yourself.
+# Add any employer you are curious about here.
+# ---------------------------------------------------------------------------
+
+[[employer]]
+name = "Automattic"
+mode = "signal"
+ats = "greenhouse"
+token = "automatticcareers"
+
+[[employer]]
+name = "Everway"
+aliases = ["Texthelp"]
+mode = "signal"
+ats = "greenhouse"
+token = "everway"
+
+[[employer]]
+name = "Understood"
+aliases = ["Understood.org"]
+mode = "signal"
+ats = "greenhouse"
+token = "understood"
+
+[[employer]]
+name = "Zapier"
+mode = "signal"
+ats = "ashby"
+token = "zapier"
+
+[[employer]]
+name = "Buffer"
+mode = "signal"
+ats = "ashby"
+token = "buffer"
+
+[[employer]]
+name = "Headway"
+mode = "signal"
+ats = "ashby"
+token = "headway"
+
+[[employer]]
+name = "Lyra Health"
+mode = "signal"
+ats = "lever"
+token = "lyrahealth"
+
+[[employer]]
+name = "Capital One"
+mode = "signal"
+ats = "workday"
+host = "capitalone.wd12.myworkdayjobs.com"
+tenant = "capitalone"
+site = "Capital_One"
+
+[[employer]]
+name = "Fidelity Investments"
+aliases = ["Fidelity"]
+mode = "signal"
+ats = "workday"
+host = "fmr.wd1.myworkdayjobs.com"
+tenant = "fmr"
+site = "FidelityCareers"
+
+[[employer]]
+name = "Hewlett Packard Enterprise"
+aliases = ["HPE"]
+mode = "signal"
+ats = "workday"
+host = "hpe.wd5.myworkdayjobs.com"
+tenant = "hpe"
+site = "Jobsathpe"
+
+[[employer]]
+name = "Warner Bros. Discovery"
+aliases = ["Warner Bros", "Warner Brothers", "WBD"]
+mode = "signal"
+ats = "workday"
+host = "warnerbros.wd5.myworkdayjobs.com"
+tenant = "warnerbros"
+site = "global"

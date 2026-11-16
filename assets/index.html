@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>Job Board</title>
+<link rel="icon" type="image/png" href="/favicon.png">
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+
+<header class="topbar">
+  <h1>Job Board</h1>
+  <label class="search">
+    <span class="visually-hidden">Filter cards</span>
+    <input id="search" type="search" placeholder="Filter by title, company or place" autocomplete="off">
+  </label>
+  <div class="topbar-right">
+    <button id="status-button" class="quiet" type="button" title="Show what the last check found">Loading…</button>
+    <button id="refresh" type="button">Check now</button>
+    <button id="open-settings" type="button">Settings</button>
+  </div>
+</header>
+
+<main id="board" class="board" aria-label="Job board"></main>
+
+<dialog id="job-dialog" class="wide" aria-labelledby="job-title">
+  <div id="job-body"></div>
+</dialog>
+
+<dialog id="settings-dialog" aria-labelledby="settings-title">
+  <form id="settings-form">
+    <h2 id="settings-title">Settings</h2>
+    <p id="settings-intro" class="intro" hidden>
+      Welcome. Every job on this board is remote. Tell it which roles you are looking for
+      and where you can work from, and it will only bring you those. You can change this
+      at any time.
+    </p>
+
+    <label for="set-roles">Show jobs with these in the title</label>
+    <textarea id="set-roles" rows="3" placeholder="e.g. devops engineer, system administrator, developer"></textarea>
+    <p class="hint">The roles you want. Separate with commas or new lines. A job is shown when its title contains every word of one entry, in any order: “system engineer” also finds “Senior Systems Engineer”. Leave empty to see every role.</p>
+
+    <label for="set-exclude">Hide jobs with these in the title <span class="optional">(optional)</span></label>
+    <textarea id="set-exclude" rows="2" placeholder="e.g. intern, director, sales"></textarea>
+    <p class="hint">Only for titles you do <strong>not</strong> want. A job is hidden when its title contains one of these, even if it also matches the list above.</p>
+
+    <label for="set-regions">Where I can work from</label>
+    <textarea id="set-regions" rows="2" placeholder="e.g. United States, USA, US"></textarea>
+    <p class="hint">Many remote jobs are limited to certain countries. List every way yours is written. Jobs open worldwide, or with no country stated, are always kept. Leave empty for anywhere.</p>
+
+    <details>
+      <summary>Employers and files</summary>
+      <p class="hint">The employers whose career sites are checked are listed in a text file you can edit. Changes are picked up on the next check.</p>
+      <dl class="paths">
+        <dt>Employer list</dt><dd id="path-employers"></dd>
+        <dt>Data folder</dt><dd id="path-data"></dd>
+        <dt>Log</dt><dd id="path-log"></dd>
+      </dl>
+      <p class="hint">To start the app when you log in, use “Start at Login” in the menu-bar icon’s menu.</p>
+    </details>
+
+    <p id="settings-error" class="form-error" role="alert" hidden></p>
+
+    <div class="dialog-actions">
+      <button type="button" id="settings-cancel">Cancel</button>
+      <button type="submit" class="primary">Save</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="run-dialog" class="wide" aria-labelledby="run-title">
+  <h2 id="run-title">Last check</h2>
+  <div id="run-body"></div>
+  <div class="dialog-actions">
+    <button type="button" id="run-close">Close</button>
+  </div>
+</dialog>
+
+<dialog id="confirm-dialog" aria-labelledby="confirm-message">
+  <p id="confirm-message"></p>
+  <div class="dialog-actions">
+    <button type="button" id="confirm-no">Cancel</button>
+    <button type="button" id="confirm-yes" class="danger"></button>
+  </div>
+</dialog>
+
+<div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+
+<script src="/app.js"></script>
+</body>
+</html>
