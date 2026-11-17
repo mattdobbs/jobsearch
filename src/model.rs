@@ -1,7 +1,32 @@
 use serde::{Deserialize, Serialize};
 
-/// Board columns, in display order.
-pub const STATUSES: [&str; 4] = ["new", "evaluating", "applied", "pass"];
+/// The columns every board starts with, as `(id, label)` in display order. They
+/// cannot be renamed or removed; the user can add columns of their own beside them.
+pub const BUILTIN_COLUMNS: [(&str, &str); 4] = [
+    ("new", "New"),
+    ("evaluating", "Evaluating"),
+    ("applied", "Applied to"),
+    ("pass", "Pass"),
+];
+
+/// Where new postings land.
+pub const NEW_COLUMN: &str = "new";
+
+/// A column added by the user is placed just before this one.
+pub const LAST_COLUMN: &str = "pass";
+
+/// How many columns a board can have, the built-in ones included.
+pub const MAX_COLUMNS: usize = 12;
+
+/// Longest column name, in characters.
+pub const MAX_COLUMN_LABEL: usize = 40;
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct Column {
+    pub id: String,
+    pub label: String,
+    pub builtin: bool,
+}
 
 /// How we know a posting is remote.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -117,10 +142,22 @@ pub struct Settings {
     pub role_keywords: Vec<String>,
     /// A job title containing any of these is dropped.
     pub exclude_keywords: Vec<String>,
+    /// A job whose title or description mentions any of these phrases is dropped.
+    pub exclude_terms: Vec<String>,
     /// Places the user can work from. A job with a stated region must match one (empty = anywhere).
     pub regions: Vec<String>,
     /// False until the user has saved settings once; drives the first-run prompt.
     pub configured: bool,
+}
+
+/// A card kept off the board by one of the user's hide lists.
+#[derive(Debug, Clone, Serialize)]
+pub struct HiddenCard {
+    pub id: i64,
+    pub title: String,
+    pub company: String,
+    /// The entry that hid it, as the user typed it.
+    pub hidden_by: String,
 }
 
 /// Per-source outcome of one scan, shown in the "last check" panel.

@@ -19,6 +19,7 @@
   <div class="topbar-right">
     <button id="status-button" class="quiet" type="button" title="Show what the last check found">Loading…</button>
     <button id="refresh" type="button">Check now</button>
+    <button id="add-column" type="button">Add column</button>
     <button id="open-settings" type="button">Settings</button>
   </div>
 </header>
@@ -46,6 +47,16 @@
     <textarea id="set-exclude" rows="2" placeholder="e.g. intern, director, sales"></textarea>
     <p class="hint">Only for titles you do <strong>not</strong> want. A job is hidden when its title contains one of these, even if it also matches the list above.</p>
 
+    <label for="set-terms">Hide jobs that mention these anywhere in the posting <span class="optional">(optional)</span></label>
+    <textarea id="set-terms" rows="2" placeholder="e.g. security clearance, TS/SCI, polygraph"></textarea>
+    <p class="hint">A job is hidden when its title or description contains one of these phrases: the same words in the same order, as whole words (add a plural as its own entry). Capitals and punctuation do not matter. A mention that says it does not apply, such as “Security clearance: None” or “no security clearance required”, is not counted.</p>
+
+    <details id="hidden-details" hidden>
+      <summary id="hidden-summary"></summary>
+      <p class="hint">Only cards still in New, with no notes or files, are hidden. Nothing is deleted: take an entry off a list and its cards come back. Open one and change its column to keep it.</p>
+      <ul id="hidden-list" class="hidden-list"></ul>
+    </details>
+
     <label for="set-regions">Where I can work from</label>
     <textarea id="set-regions" rows="2" placeholder="e.g. United States, USA, US"></textarea>
     <p class="hint">Many remote jobs are limited to certain countries. List every way yours is written. Jobs open worldwide, or with no country stated, are always kept. Leave empty for anywhere.</p>
@@ -66,6 +77,28 @@
     <div class="dialog-actions">
       <button type="button" id="settings-cancel">Cancel</button>
       <button type="submit" class="primary">Save</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="column-dialog" aria-labelledby="column-title">
+  <form id="column-form">
+    <h2 id="column-title">Add a column</h2>
+    <label for="column-name">Name</label>
+    <input id="column-name" type="text" maxlength="40" autocomplete="off" placeholder="e.g. Interviewing">
+    <p id="column-hint" class="hint">It is added just before Pass. You can move it afterwards.</p>
+    <div id="column-position" hidden>
+      <div class="position-row">
+        <button type="button" id="column-left">← Move left</button>
+        <button type="button" id="column-right">Move right →</button>
+        <span id="column-where" class="hint" aria-live="polite"></span>
+      </div>
+    </div>
+    <p id="column-error" class="form-error" role="alert" hidden></p>
+    <div class="dialog-actions">
+      <button type="button" id="column-delete" class="danger push-left" hidden>Delete column</button>
+      <button type="button" id="column-cancel">Cancel</button>
+      <button type="submit" id="column-save" class="primary">Add column</button>
     </div>
   </form>
 </dialog>

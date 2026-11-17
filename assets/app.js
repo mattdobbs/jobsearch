@@ -1,19 +1,24 @@
 'use strict';
 
-const COLUMNS = [
-  { id: 'new', label: 'New', empty: 'Nothing new right now.' },
-  { id: 'evaluating', label: 'Evaluating', empty: 'Drag a card here while you look into it.' },
-  { id: 'applied', label: 'Applied to', empty: 'Drag a card here once you have applied.' },
-  { id: 'pass', label: 'Pass', empty: 'Jobs you pass on stay here and are never shown as new again.' },
+// The columns every board starts with. The app replaces this list with the real
+// one, which also holds the columns you have added.
+const BUILTIN_COLUMNS = [
+  { id: 'new', label: 'New', builtin: true },
+  { id: 'evaluating', label: 'Evaluating', builtin: true },
+  { id: 'applied', label: 'Applied to', builtin: true },
+  { id: 'pass', label: 'Pass', builtin: true },
 ];
 
-// The one-click moves offered on a card, per column.
-const QUICK_MOVES = {
-  new: [['evaluating', 'Evaluate'], ['pass', 'Pass']],
-  evaluating: [['applied', 'Applied'], ['pass', 'Pass']],
-  applied: [['pass', 'Pass']],
-  pass: [['new', 'Restore']],
+const EMPTY_TEXT = {
+  new: 'Nothing new right now.',
+  evaluating: 'Drag a card here while you look into it.',
+  applied: 'Drag a card here once you have applied.',
+  pass: 'Jobs you pass on stay here and are never shown as new again.',
 };
+
+// What a card's one-click button calls a move into a built-in column. A column you
+// added is called by its name.
+const MOVE_VERBS = { evaluating: 'Evaluate', applied: 'Applied' };
 
 const WHY_LABELS = {
   program: 'Neurodiversity hiring program',
@@ -25,6 +30,7 @@ const WHY_LABELS = {
 const PAGE_SIZE = 100;
 
 const state = {
+  columns: BUILTIN_COLUMNS,
   jobs: [],
   filter: '',
   shown: {},
@@ -167,9 +173,25 @@ function emptyNewNote() {
   if (!totals || totals.added > 0 || totals.filtered === 0) return null;
   return h('div', { class: 'empty-note' },
     `The last check read ${totals.read.toLocaleString()} postings. `
-    + `${totals.filtered.toLocaleString()} were remote but were left out by your role and region settings.`,
+    + `${totals.filtered.toLocaleString()} were remote but were left out by your settings.`,
     h('div', null, h('button', { type: 'button', onclick: () => openSettings(false) }, 'Review settings')),
   );
+}
+
+/** The one-click moves offered on a card: on to the next column, and Pass. */
+function quickMoves(status) {
+  if (status === 'pass') return [['new', 'Restore']];
+  const at = state.columns.findIndex((column) => column.id === status);
+  const next = at >= 0 ? state.columns[at + 1] : null;
+  const moves = [];
+  if (next && next.id !== 'pass') moves.push([next.id, MOVE_VERBS[next.id] || next.label]);
+  moves.push(['pass', 'Pass']);
+  return moves;
+}
+
+function columnLabel(id) {
+  const column = state.columns.find((candidate) => candidate.id === id);
+  return column ? column.label : id;
 }
 
 function renderBoard() {
@@ -180,25 +202,42 @@ function renderBoard() {
   }
   const query = state.filter.trim().toLowerCase();
 
-  board.replaceChildren(...COLUMNS.map((column) => {
+  board.replaceChildren(...state.columns.map((column) => {
     const all = state.jobs.filter((job) => job.status === column.id);
     const jobs = query ? all.filter((job) => matchesFilter(job, query)) : all;
     const limit = state.shown[column.id] || PAGE_SIZE;
 
+    const hiddenCount = column.id === 'new' && state.status ? state.status.hidden_cards : 0;
     const body = h('div', { class: 'column-body', 'data-status': column.id },
+      hiddenCount > 0 && h('button', {
+        type: 'button',
+        class: 'quiet hidden-note',
+        title: 'Show which cards are hidden, and why',
+        onclick: () => openSettings(false),
+      }, `${hiddenCount} more hidden by your hide lists`),
       jobs.slice(0, limit).map(renderCard),
       jobs.length > limit && h('button', {
         type: 'button',
         onclick: () => { state.shown[column.id] = limit + PAGE_SIZE; renderBoard(); },
       }, `Show ${Math.min(PAGE_SIZE, jobs.length - limit)} more`),
-      jobs.length === 0 && h('p', { class: 'empty' }, query && all.length ? 'No cards match the filter.' : column.empty),
+      jobs.length === 0 && h('p', { class: 'empty' },
+        query && all.length ? 'No cards match the filter.' : (EMPTY_TEXT[column.id] || 'Drag a card here.')),
       column.id === 'new' && all.length === 0 && emptyNewNote(),
     );
 
     const section = h('section', { class: 'column', 'aria-label': column.label },
       h('header', { class: 'column-head' },
         h('h2', null, column.label),
-        h('span', { class: 'count' }, query ? `${jobs.length} of ${all.length}` : String(all.length)),
+        h('span', { class: 'column-tools' },
+          h('span', { class: 'count' }, query ? `${jobs.length} of ${all.length}` : String(all.length)),
+          !column.builtin && h('button', {
+            type: 'button',
+            class: 'quiet column-edit',
+            title: 'Rename, move or delete this column',
+            'aria-label': `Edit the ${column.label} column`,
+            onclick: () => openColumnDialog(column),
+          }, '⋯'),
+        ),
       ),
       body,
     );
@@ -252,8 +291,9 @@ function renderCard(job) {
         rel: 'noopener noreferrer',
         title: job.direct ? 'Opens the employer’s own listing' : `Opens the listing on ${job.source_label}`,
       }, 'Open posting ↗'),
-      (QUICK_MOVES[job.status] || []).map(([target, label]) => h('button', {
+      quickMoves(job.status).map(([target, label]) => h('button', {
         type: 'button',
+        title: `Move to ${columnLabel(target)}`,
         onclick: () => moveJob(job.id, target),
       }, label)),
     ),
@@ -285,7 +325,19 @@ async function loadJobs() {
 
 async function moveJob(id, status) {
   const job = state.jobs.find((candidate) => candidate.id === id);
-  if (!job || job.status === status) return;
+  if (!job) {
+    // A card the hide lists keep off the board, opened from Settings. Moving it
+    // brings it back.
+    try {
+      await api('PATCH', `/api/jobs/${id}`, { status });
+      await loadJobs();
+      if ($('#settings-dialog').open) showHiddenCards();
+    } catch (error) {
+      fail(error);
+    }
+    return;
+  }
+  if (job.status === status) return;
   // Show the move straight away; put it back if the server refuses.
   const previous = { status: job.status, changed: job.status_changed_at };
   job.status = status;
@@ -300,6 +352,115 @@ async function moveJob(id, status) {
     renderBoard();
     fail(error);
   }
+}
+
+// ---- columns --------------------------------------------------------------------
+
+function setColumns(columns) {
+  state.columns = columns;
+  renderBoard();
+  if (state.openJob) renderJob();
+}
+
+async function loadColumns() {
+  try {
+    setColumns(await api('GET', '/api/columns'));
+  } catch (error) {
+    fail(error);
+  }
+}
+
+// The id of the column being edited, or null while adding one.
+let editingColumn = null;
+
+function columnError(error) {
+  const box = $('#column-error');
+  box.textContent = error.message || String(error);
+  box.hidden = false;
+  // Back to the name, which is what needs changing.
+  $('#column-name').focus();
+}
+
+/** Says where the column being edited sits, and which ways it can still move. */
+function describeColumnPosition() {
+  const at = state.columns.findIndex((column) => column.id === editingColumn);
+  if (at < 0) return;
+  const left = state.columns[at - 1];
+  const right = state.columns[at + 1];
+  // New always stays first.
+  $('#column-left').disabled = at <= 1;
+  $('#column-right').disabled = !right;
+  $('#column-where').textContent = right
+    ? `Between ${left.label} and ${right.label}`
+    : `Last, after ${left.label}`;
+}
+
+function openColumnDialog(column) {
+  editingColumn = column ? column.id : null;
+  $('#column-title').textContent = column ? 'Edit column' : 'Add a column';
+  $('#column-name').value = column ? column.label : '';
+  $('#column-hint').hidden = Boolean(column);
+  $('#column-position').hidden = !column;
+  $('#column-delete').hidden = !column;
+  $('#column-save').textContent = column ? 'Save' : 'Add column';
+  $('#column-error').hidden = true;
+  describeColumnPosition();
+  $('#column-dialog').showModal();
+  $('#column-name').focus();
+  $('#column-name').select();
+}
+
+async function saveColumn(event) {
+  event.preventDefault();
+  const label = $('#column-name').value.trim();
+  try {
+    if (editingColumn === null) {
+      const before = new Set(state.columns.map((column) => column.id));
+      setColumns(await api('POST', '/api/columns', { label }));
+      // Bring the new column into view on a board too wide for the window.
+      const added = state.columns.find((column) => !before.has(column.id));
+      const body = added && document.querySelector(`.column-body[data-status="${added.id}"]`);
+      if (body) body.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+    } else if (label !== columnLabel(editingColumn)) {
+      setColumns(await api('PATCH', `/api/columns/${editingColumn}`, { label }));
+    }
+  } catch (error) {
+    columnError(error);
+    return;
+  }
+  $('#column-dialog').close();
+}
+
+async function moveColumn(direction) {
+  $('#column-error').hidden = true;
+  try {
+    setColumns(await api('PATCH', `/api/columns/${editingColumn}`, { move: direction }));
+    describeColumnPosition();
+  } catch (error) {
+    columnError(error);
+  }
+}
+
+async function deleteColumn() {
+  const at = state.columns.findIndex((column) => column.id === editingColumn);
+  if (at < 1) return;
+  const column = state.columns[at];
+  const destination = state.columns[at - 1];
+  const count = state.jobs.filter((job) => job.status === column.id).length;
+  const consequence = count === 0
+    ? 'It has no cards.'
+    : `Its ${count === 1 ? 'card moves' : `${count} cards move`} to ${destination.label}.`;
+  if (!await confirmAction(`Delete the column “${column.label}”? ${consequence}`, 'Delete column')) return;
+  try {
+    const result = await api('DELETE', `/api/columns/${column.id}`);
+    setColumns(result.columns);
+    await loadJobs();
+    if (result.moved) toast(`${result.moved} card${result.moved === 1 ? '' : 's'} moved to ${destination.label}.`);
+  } catch (error) {
+    columnError(error);
+    return;
+  }
+  $('#column-dialog').close();
 }
 
 // ---- job detail ---------------------------------------------------------------
@@ -335,7 +496,7 @@ function renderJob() {
       job.status = event.target.value;
       await moveJob(job.id, event.target.value);
     },
-  }, COLUMNS.map((column) => h('option', { value: column.id, selected: column.id === job.status }, column.label)));
+  }, state.columns.map((column) => h('option', { value: column.id, selected: column.id === job.status }, column.label)));
 
   const description = h('div', { class: 'description' });
   if (job.description) {
@@ -561,6 +722,7 @@ function renderStatus() {
 }
 
 async function pollStatus() {
+  const hiddenBefore = state.status ? state.status.hidden_cards : 0;
   try {
     state.status = await api('GET', '/api/status');
   } catch (_) {
@@ -568,6 +730,7 @@ async function pollStatus() {
     return;
   }
   renderStatus();
+  if (state.status.hidden_cards !== hiddenBefore) renderBoard();
   if (state.wasScanning && !state.status.scanning) {
     const added = state.status.last_run ? state.status.last_run.added : 0;
     const totals = lastCheckTotals();
@@ -612,7 +775,7 @@ function showLastRun() {
             column('Seen before', 'Already on the board, or already judged'),
             column('Not remote', 'Dropped: the listing did not clearly say remote'),
             column('Not inclusive', 'Dropped: nothing showed the employer welcomes neurodivergent or disabled applicants'),
-            column('Filtered', 'Dropped by your role and region settings'),
+            column('Filtered', 'Dropped by your settings: role, region or a hide list'),
             column('Duplicate', 'A board copy of a job already on the board'),
             column('Later', 'Left for the next check to keep requests polite'),
           )),
@@ -645,7 +808,9 @@ async function openSettings(firstRun) {
   $('#settings-error').hidden = true;
   $('#set-roles').value = settings.role_keywords.join(', ');
   $('#set-exclude').value = settings.exclude_keywords.join(', ');
+  $('#set-terms').value = settings.exclude_terms.join(', ');
   $('#set-regions').value = settings.regions.join(', ');
+  showHiddenCards();
   if (state.status) {
     $('#path-employers').textContent = state.status.employers_file;
     $('#path-data').textContent = state.status.data_dir;
@@ -654,12 +819,37 @@ async function openSettings(firstRun) {
   $('#settings-dialog').showModal();
 }
 
+/** Lists, in Settings, the cards the hide lists are keeping off the board. */
+async function showHiddenCards() {
+  const details = $('#hidden-details');
+  details.hidden = true;
+  let hidden;
+  try {
+    hidden = await api('GET', '/api/hidden');
+  } catch (_) {
+    return;
+  }
+  if (!hidden.length) return;
+  $('#hidden-summary').textContent = hidden.length === 1
+    ? '1 card on your board is hidden by these lists'
+    : `${hidden.length} cards on your board are hidden by these lists`;
+  details.open = false;
+  $('#hidden-list').replaceChildren(...hidden.map((card) => h('li', null,
+    h('button', { type: 'button', title: 'Open this card', onclick: () => openJob(card.id) },
+      [card.title, card.company].filter(Boolean).join(' · ')),
+    h('span', { class: 'hidden-why' }, `“${card.hidden_by}”`),
+  )));
+  details.hidden = false;
+}
+
 async function saveSettings(event) {
   event.preventDefault();
+  let saved;
   try {
-    await api('PUT', '/api/settings', {
+    saved = await api('PUT', '/api/settings', {
       role_keywords: splitList($('#set-roles').value),
       exclude_keywords: splitList($('#set-exclude').value),
+      exclude_terms: splitList($('#set-terms').value),
       regions: splitList($('#set-regions').value),
     });
   } catch (error) {
@@ -671,7 +861,13 @@ async function saveSettings(event) {
     return;
   }
   $('#settings-dialog').close();
-  toast('Saved. Checking for jobs with the new settings…');
+  const hidden = saved.hidden_cards;
+  toast(hidden
+    ? `Saved. ${hidden} card${hidden === 1 ? ' is' : 's are'} now hidden by your hide lists. Checking for jobs…`
+    : 'Saved. Checking for jobs with the new settings…');
+  // The hide lists apply to the cards already here, straight away.
+  if (state.status) state.status.hidden_cards = hidden;
+  loadJobs();
   checkNow();
 }
 
@@ -687,6 +883,12 @@ async function start() {
   $('#open-settings').addEventListener('click', () => openSettings(false));
   $('#settings-cancel').addEventListener('click', () => $('#settings-dialog').close());
   $('#settings-form').addEventListener('submit', saveSettings);
+  $('#add-column').addEventListener('click', () => openColumnDialog(null));
+  $('#column-form').addEventListener('submit', saveColumn);
+  $('#column-cancel').addEventListener('click', () => $('#column-dialog').close());
+  $('#column-left').addEventListener('click', () => moveColumn('left'));
+  $('#column-right').addEventListener('click', () => moveColumn('right'));
+  $('#column-delete').addEventListener('click', deleteColumn);
   $('#run-close').addEventListener('click', () => $('#run-dialog').close());
   $('#job-dialog').addEventListener('close', () => {
     state.openJob = null;
@@ -700,7 +902,7 @@ async function start() {
   }
 
   renderBoard();
-  await Promise.all([loadJobs(), pollStatus()]);
+  await Promise.all([loadColumns(), loadJobs(), pollStatus()]);
   renderBoard();
   setInterval(pollStatus, 5000);
   setInterval(loadJobs, 120000);

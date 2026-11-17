@@ -115,7 +115,7 @@ button.quiet:hover { border-color: var(--border); }
 
 button.danger { color: var(--danger); }
 
-input[type="search"], textarea, select {
+input[type="search"], input[type="text"], textarea, select {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 6px;
@@ -155,7 +155,10 @@ textarea { width: 100%; resize: vertical; }
   flex: 1;
   min-height: 0;
   display: grid;
-  grid-template-columns: repeat(4, minmax(240px, 1fr));
+  /* One row; a column for each board column, however many the user has added. */
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(240px, 1fr);
+  grid-template-rows: minmax(0, 1fr);
   gap: 12px;
   padding: 12px 16px 16px;
   overflow-x: auto;
@@ -183,7 +186,11 @@ textarea { width: 100%; resize: vertical; }
   padding: 10px 12px 8px;
 }
 
-.column-head h2 { font-size: 1rem; }
+.column-head h2 { font-size: 1rem; overflow-wrap: anywhere; }
+
+.column-tools { display: flex; align-items: baseline; gap: 6px; white-space: nowrap; }
+
+.column-edit { padding: 0 7px; line-height: 1.3; }
 
 .count { color: var(--muted); font-size: 0.9rem; }
 
@@ -245,7 +252,15 @@ textarea { width: 100%; resize: vertical; }
   margin-top: 9px;
 }
 
-.card-actions button, .card-actions .button { font-size: 0.85rem; padding: 3px 9px; }
+.card-actions button, .card-actions .button {
+  font-size: 0.85rem;
+  padding: 3px 9px;
+  /* A column the user named can be long. */
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 
 /* ---- dialogs ---- */
 
@@ -274,11 +289,58 @@ dialog h3 { font-size: 1rem; margin-bottom: 6px; }
   margin-top: 16px;
 }
 
-#settings-form label {
+#settings-form label, #column-form label {
   display: block;
   font-weight: 600;
   margin: 14px 0 4px;
 }
+
+#column-name { width: 100%; }
+
+.position-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.position-row .hint { margin-top: 0; }
+
+.dialog-actions .push-left { margin-right: auto; }
+
+.hidden-list {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  max-height: 220px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.hidden-list li {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 10px;
+  padding: 5px 9px;
+  font-size: 0.88rem;
+}
+
+.hidden-list li + li { border-top: 1px solid var(--border); }
+
+.hidden-list button {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--accent);
+  text-align: left;
+  text-decoration: underline;
+  overflow-wrap: anywhere;
+}
+
+.hidden-list .hidden-why { color: var(--muted); white-space: nowrap; }
 
 .hint, .intro { color: var(--muted); font-size: 0.88rem; margin-top: 3px; }
 
@@ -301,6 +363,8 @@ dialog h3 { font-size: 1rem; margin-bottom: 6px; }
 }
 
 .empty-note button { margin-top: 8px; }
+
+.hidden-note { font-size: 0.85rem; padding: 2px 8px; align-self: center; }
 
 .intro { margin: 8px 0 0; font-size: 0.95rem; color: var(--text); }
 

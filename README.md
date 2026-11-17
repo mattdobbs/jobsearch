@@ -5,7 +5,7 @@ hire disabled and neurodivergent people (ADHD, autism and others), and keeps the
 a kanban board on your own Mac.
 
 - Checks for jobs twice a day, in the background.
-- Columns: **New**, **Evaluating**, **Applied to**, **Pass**.
+- Columns: **New**, **Evaluating**, **Applied to**, **Pass**, and any others you add.
 - Each card has notes, file attachments, a link to the posting, and the reason it is
   on your board.
 - Only ever shows postings whose listing says the job is remote.
@@ -90,6 +90,19 @@ When a listing is ambiguous it is dropped. That means some genuinely remote jobs
 will be missed. An employer can also label a job remote and still mean something
 else by it, so read the posting before applying.
 
+## Columns
+
+The board starts with **New**, **Evaluating**, **Applied to** and **Pass**. Those four
+stay as they are. **Add column** in the top bar adds one of your own, for example
+"Interviewing" or "Offer". It is placed just before Pass.
+
+A column you added has a **⋯** button in its heading, to rename it, move it left or
+right, or delete it. Nothing can go in front of New. Deleting a column never deletes
+cards: they move to the column on its left, and the app says so before you confirm.
+
+Cards move between columns by dragging, with the **Column** menu inside a card, or
+with the buttons on the card: one for the next column along, and **Pass**.
+
 ## Settings
 
 **Settings** in the app:
@@ -100,6 +113,9 @@ else by it, so read the posting before applying.
   "Sr. Systems Engineer" and "system administrator" finds "Linux System Admin".
 - **Hide jobs with these in the title** — only for titles you do not want. The app
   refuses to save a hide entry that would hide every job matching one of your roles.
+- **Hide jobs that mention these anywhere in the posting** — phrases you do not want
+  to see in the title or the description, for example "security clearance" or
+  "polygraph". See below.
 - **Where I can work from** — for remote jobs limited to certain countries. Jobs open
   worldwide, or that name no country, are always kept. Listing the United States also
   matches postings that name only a US state, or a region such as "NAMER".
@@ -107,7 +123,32 @@ else by it, so read the posting before applying.
 If a check finds postings but your settings leave all of them out, the New column
 says so and links to Settings.
 
-Changes apply from the next check. Jobs already on the board stay there.
+Changes to roles and places apply from the next check, and jobs already on the board
+stay there. The two hide lists also apply to the board straight away, as described
+next.
+
+### Hiding by phrase
+
+A phrase matches when the posting has the same words in the same order, as whole
+words. Capitals and punctuation do not matter: "TS/SCI" also finds "TS / SCI", and
+"clearance" does not find "clearances".
+
+A mention that says the thing does not apply is not counted. Many postings carry a
+line such as "Security Clearance: None", "Clearance Level Must Currently Possess:
+None" or "no security clearance required"; hiding "clearance" leaves those on the
+board and hides the jobs that ask for one. The rule is narrow on purpose. A
+requirement worded with a negative ("candidates without an active clearance will not
+be considered") still counts as a mention.
+
+It is a text match, not a reading of the posting, so check what it hides:
+
+- When you save, cards already in **New** that match are hidden at once, and the app
+  says how many. Cards you have moved, or added a note or a file to, are never
+  hidden.
+- Nothing is deleted. **Settings** lists every hidden card with the entry that hid
+  it. Remove the entry and its cards come back; or open a hidden card from that list
+  and change its column to keep just that one.
+- The New column shows how many cards are hidden.
 
 ### Adding employers
 
@@ -127,7 +168,7 @@ update can add employers. Once you change it, it is left alone.
 
 Everything lives in `~/Library/Application Support/JobSearch/`:
 
-- `jobs.sqlite3` — cards, notes, settings
+- `jobs.sqlite3` — cards, notes, columns, settings
 - `attachments/` — files you attach to cards, under their own names
 - `employers.toml` — the employer list
 - `jobsearch.log` — what each check did

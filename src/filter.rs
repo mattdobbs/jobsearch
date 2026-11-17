@@ -27,6 +27,22 @@ pub fn plain_text(html: &str) -> String {
     WHITESPACE.replace_all(&decoded, " ").trim().to_string()
 }
 
+/// Tags that start a new line when a description is shown.
+static BLOCK_TAGS: LazyLock<Regex> = LazyLock::new(|| {
+    re(r"(?i)<br\s*/?>|</?(p|div|li|ul|ol|h[1-6]|tr|td|th|table|section|article|blockquote|dl|dt|dd|pre|hr)\b[^>]*>")
+});
+
+/// Like `plain_text`, but keeps the line breaks a reader would see, so a label and
+/// the next label ("Travel: No", "Clearance: Secret") do not run together.
+pub fn block_text(html: &str) -> String {
+    let broken = BLOCK_TAGS.replace_all(html, "\n");
+    let without_tags = TAGS.replace_all(&broken, " ");
+    let decoded = html_escape::decode_html_entities(&without_tags);
+    // Some career sites escape their text twice, leaving "&#xa;" where a line break
+    // was meant. A second pass restores it.
+    html_escape::decode_html_entities(&decoded).into_owned()
+}
+
 // ---- remote ---------------------------------------------------------------
 
 /// Words in a title or location that mean the job is not fully remote.
@@ -297,15 +313,24 @@ pub fn wants_role(title: &str, settings: &Settings) -> bool {
     settings.role_keywords.is_empty() || settings.role_keywords.iter().any(|k| keyword_matches(&title, k))
 }
 
+/// The entry of the title hide list that this title matches, if any.
+fn hidden_title_keyword(title: &str, settings: &Settings) -> Option<String> {
+    if settings.exclude_keywords.is_empty() {
+        return None;
+    }
+    let title: HashSet<String> = title_words(title).into_iter().collect();
+    settings.exclude_keywords.iter().find(|k| keyword_matches(&title, k)).cloned()
+}
+
 /// True when the title matches a role keyword the user explicitly listed.
 pub fn names_role(title: &str, settings: &Settings) -> bool {
     let title: HashSet<String> = title_words(title).into_iter().collect();
     settings.role_keywords.iter().any(|k| keyword_matches(&title, k))
 }
 
-/// Finds wanted roles that could never produce a job because a hidden keyword covers
-/// them. Any title matching the role contains every word of the hidden keyword too,
-/// so it would always be hidden. Returns `(role, hidden keyword)` pairs.
+/// Finds wanted roles that could never produce a job because an entry in one of the
+/// hide lists covers them: any title matching the role would match the hidden entry
+/// too. Returns `(role, hidden entry)` pairs.
 pub fn conflicting_keywords(settings: &Settings) -> Vec<(String, String)> {
     let mut conflicts = Vec::new();
     for role in &settings.role_keywords {
@@ -313,14 +338,182 @@ pub fn conflicting_keywords(settings: &Settings) -> Vec<(String, String)> {
         if role_words.is_empty() {
             continue;
         }
-        for hidden in &settings.exclude_keywords {
-            if keyword_matches(&role_words, hidden) {
-                conflicts.push((role.clone(), hidden.clone()));
-                break;
-            }
+        let in_title = settings.exclude_keywords.iter().find(|hidden| keyword_matches(&role_words, hidden));
+        // A phrase from the "anywhere" list hides a title that contains it as written.
+        let role_tokens = tokens(role);
+        let anywhere = || settings.exclude_terms.iter().find(|term| mentions(&role_tokens, term));
+        if let Some(hidden) = in_title.or_else(anywhere) {
+            conflicts.push((role.clone(), hidden.clone()));
         }
     }
     conflicts
+}
+
+// ---- phrases hidden anywhere in a posting -----------------------------------
+
+/// A posting broken into words, keeping only the punctuation that tells a label from
+/// its value and one statement from the next.
+#[derive(Debug, PartialEq)]
+enum Token {
+    Word(String),
+    Colon,
+    /// A line break or the end of a sentence.
+    Break,
+}
+
+fn tokens(text: &str) -> Vec<Token> {
+    fn flush(word: &mut String, out: &mut Vec<Token>) {
+        if !word.is_empty() {
+            out.push(Token::Word(std::mem::take(word)));
+        }
+    }
+    fn end_statement(out: &mut Vec<Token>) {
+        if !matches!(out.last(), Some(Token::Break) | None) {
+            out.push(Token::Break);
+        }
+    }
+
+    let mut out = Vec::new();
+    let mut word = String::new();
+    let mut previous: Option<char> = None;
+    let mut chars = text.chars().peekable();
+    while let Some(c) = chars.next() {
+        let next = chars.peek().copied();
+        if c.is_alphanumeric() {
+            word.extend(c.to_lowercase());
+        } else if (c == '+' || c == '#') && !word.is_empty() {
+            // "C++", "C#"
+            word.push(c);
+        } else if c == '.'
+            && word.is_empty()
+            && next.is_some_and(char::is_alphanumeric)
+            && !previous.is_some_and(char::is_alphanumeric)
+        {
+            // ".NET"
+            word.push(c);
+        } else {
+            flush(&mut word, &mut out);
+            match c {
+                ':' => out.push(Token::Colon),
+                '\n' | '!' | '?' | ';' | '|' | '\u{2022}' => end_statement(&mut out),
+                '.' if next.is_none_or(char::is_whitespace) => end_statement(&mut out),
+                _ => {}
+            }
+        }
+        previous = Some(c);
+    }
+    flush(&mut word, &mut out);
+    out
+}
+
+fn word_at(tokens: &[Token], index: usize) -> Option<&str> {
+    match tokens.get(index) {
+        Some(Token::Word(word)) => Some(word),
+        _ => None,
+    }
+}
+
+fn is_requirement(word: &str) -> bool {
+    matches!(word, "require" | "requires" | "required" | "need" | "needs" | "needed" | "necessary")
+}
+
+/// True when the mention at `first..=last` says the thing does not apply:
+///
+/// - a label whose value is empty: "Security Clearance Type: None/Not Required",
+///   "Clearance Level Must Currently Possess: None";
+/// - "no security clearance required", "does not require a security clearance";
+/// - "security clearance is not required".
+///
+/// Deliberately narrow. "Candidates without an active clearance will not be
+/// considered" is a requirement, and still counts as a mention.
+fn says_it_does_not_apply(tokens: &[Token], first: usize, last: usize) -> bool {
+    // Words leading up to the mention, nearest first, within the same statement.
+    let before: Vec<(usize, &str)> = (0..first)
+        .rev()
+        .map_while(|i| word_at(tokens, i).map(|word| (i, word)))
+        .take(4)
+        .collect();
+    if before.iter().take(2).any(|(_, word)| *word == "no") {
+        return true;
+    }
+    if let Some((verb, _)) = before.iter().find(|(_, word)| is_requirement(word)) {
+        // "not require", and "doesn't require" (which splits into "doesn" + "t").
+        if verb.checked_sub(1).and_then(|i| word_at(tokens, i)).is_some_and(|word| matches!(word, "not" | "t")) {
+            return true;
+        }
+    }
+
+    // "... is not required"
+    let mut after = last + 1;
+    while after <= last + 2 && word_at(tokens, after).is_some_and(|word| matches!(word, "is" | "are" | "was")) {
+        after += 1;
+    }
+    if word_at(tokens, after) == Some("not") && word_at(tokens, after + 1).is_some_and(is_requirement) {
+        return true;
+    }
+
+    // The mention is part of a label; its value follows the colon, on the same line
+    // or the next one.
+    let colon = (last + 1..tokens.len())
+        .take(9)
+        .take_while(|&i| tokens[i] != Token::Break)
+        .find(|&i| tokens[i] == Token::Colon);
+    let Some(colon) = colon else {
+        return false;
+    };
+    let value = if tokens.get(colon + 1) == Some(&Token::Break) { colon + 2 } else { colon + 1 };
+    match word_at(tokens, value) {
+        Some("none" | "nil" | "na") => true,
+        Some("n") => word_at(tokens, value + 1) == Some("a"),
+        Some("not") => word_at(tokens, value + 1).is_some_and(|word| is_requirement(word) || word == "applicable"),
+        // A bare "No", not "No lower than Secret".
+        Some("no") => !matches!(tokens.get(value + 1), Some(Token::Word(_))),
+        _ => false,
+    }
+}
+
+/// True when the text mentions the phrase: the same words, in the same order, as
+/// whole words. Capitals and the punctuation between words are ignored, so "TS/SCI"
+/// finds "TS / SCI" and "possess secret" finds "Possess: Secret". A mention that
+/// says the thing does not apply is not counted.
+fn mentions(text: &[Token], phrase: &str) -> bool {
+    let wanted: Vec<String> = tokens(phrase)
+        .into_iter()
+        .filter_map(|token| match token {
+            Token::Word(word) => Some(word),
+            _ => None,
+        })
+        .collect();
+    if wanted.is_empty() {
+        return false;
+    }
+    let words: Vec<(usize, &str)> = text
+        .iter()
+        .enumerate()
+        .filter_map(|(i, token)| match token {
+            Token::Word(word) => Some((i, word.as_str())),
+            _ => None,
+        })
+        .collect();
+    words.windows(wanted.len()).any(|window| {
+        window.iter().zip(&wanted).all(|((_, word), want)| word == want)
+            && !says_it_does_not_apply(text, window[0].0, window[wanted.len() - 1].0)
+    })
+}
+
+/// The entry of the "anywhere in the posting" hide list that this posting mentions,
+/// if any. The title counts as part of the posting.
+pub fn hidden_term(title: &str, description_html: &str, settings: &Settings) -> Option<String> {
+    if settings.exclude_terms.is_empty() {
+        return None;
+    }
+    let text = tokens(&format!("{title}\n{}", block_text(description_html)));
+    settings.exclude_terms.iter().find(|term| mentions(&text, term)).cloned()
+}
+
+/// The entry of either hide list that keeps this posting off the board, if any.
+pub fn hidden_by(title: &str, description_html: &str, settings: &Settings) -> Option<String> {
+    hidden_title_keyword(title, settings).or_else(|| hidden_term(title, description_html, settings))
 }
 
 static OPEN_REGION: LazyLock<Regex> = LazyLock::new(|| {
@@ -413,7 +606,19 @@ mod tests {
             exclude_keywords: exclude.iter().map(|s| s.to_string()).collect(),
             regions: regions.iter().map(|s| s.to_string()).collect(),
             configured: true,
+            ..Settings::default()
         }
+    }
+
+    fn hiding(terms: &[&str]) -> Settings {
+        Settings {
+            exclude_terms: terms.iter().map(|s| s.to_string()).collect(),
+            ..Settings::default()
+        }
+    }
+
+    fn hidden(html: &str, terms: &[&str]) -> bool {
+        hidden_term("Systems Engineer", html, &hiding(terms)).is_some()
     }
 
     #[test]
@@ -606,6 +811,104 @@ mod tests {
         // A narrower hidden keyword is a legitimate refinement.
         let fine = settings(&["engineer"], &["sales engineer", "intern"], &[]);
         assert!(conflicting_keywords(&fine).is_empty());
+        // The "anywhere" list hides titles too.
+        let mut anywhere = settings(&["devops engineer", "developer"], &[], &[]);
+        anywhere.exclude_terms = vec!["security clearance".into(), "DevOps".into()];
+        assert_eq!(
+            conflicting_keywords(&anywhere),
+            vec![("devops engineer".to_string(), "DevOps".to_string())]
+        );
+    }
+
+    #[test]
+    fn hidden_phrases_are_found_anywhere_in_the_posting() {
+        let terms = ["security clearance", "TS/SCI", "polygraph"];
+        for html in [
+            "<p>Candidate must be able to obtain + maintain an Interim Secret security clearance prior to a start date.</p>",
+            "<ul><li>Active TS / SCI required.</li></ul>",
+            "<p>Top Secret (TS-SCI) with a full-scope POLYGRAPH.</p>",
+            "<p>Must obtain a Public Trust Security&nbsp;Clearance prior to start date.</p>",
+            // A requirement phrased with a negative is still a requirement.
+            "<p>Candidates without an active security clearance will not be considered.</p>",
+            "<p>If you do not hold a security clearance today, we will sponsor one.</p>",
+        ] {
+            assert!(hidden(html, &terms), "should be hidden: {html}");
+        }
+        for html in [
+            "<p>We build tools for developers.</p>",
+            // Whole words, as written.
+            "<p>Experience with secrets management and customs clearances.</p>",
+            "<p>Our security team owns clearance of vulnerabilities.</p>",
+        ] {
+            assert!(!hidden(html, &terms), "should not be hidden: {html}");
+        }
+        // The title is part of the posting.
+        assert!(hidden_term("DevOps Engineer (TS/SCI)", "", &hiding(&terms)).is_some());
+        // Nothing is hidden until the user lists something.
+        assert!(hidden_term("Cleared Engineer", "<p>security clearance</p>", &Settings::default()).is_none());
+        // The entry is reported as the user typed it.
+        assert_eq!(hidden_term("Engineer", "<p>Needs a polygraph.</p>", &hiding(&terms)).as_deref(), Some("polygraph"));
+    }
+
+    #[test]
+    fn a_mention_that_says_it_does_not_apply_is_not_counted() {
+        // How three employers on the board lay out a job with no clearance.
+        let none_needed = concat!(
+            "<p><u><b>Clearance Level Must Currently Possess:</b></u></p>None<p></p><p></p>",
+            "<p><u><b>Clearance Level Must Be Able to Obtain:</b></u></p>None<p></p><p></p>",
+            "<p><b><u>Public Trust/Other Required:</u></b></p>None<p></p><p><u><b>Job Family:</b></u></p>Software Engineering",
+        );
+        assert!(!hidden(none_needed, &["clearance", "public trust"]));
+        let doubly_escaped = "Remote&amp;#xa;&amp;#xa;<p><b>Security Clearance Type: </b></p>None/Not Required&amp;#xa;&amp;#xa;<p><b>Security Clearance Status: </b></p>Not Required<p></p>";
+        assert!(!hidden(doubly_escaped, &["security clearance", "clearance"]));
+        for html in [
+            "<p>No security clearance required.</p>",
+            "<p>No active security clearance is needed for this role.</p>",
+            "<p>This role does not require a security clearance.</p>",
+            "<p>This role doesn't require a security clearance.</p>",
+            "<p>Applicants are not required to hold a security clearance.</p>",
+            "<p>A security clearance is not required.</p>",
+            "<p>Security clearance: N/A</p>",
+            "<p>Security Clearance Required: No</p>",
+        ] {
+            assert!(!hidden(html, &["security clearance"]), "should not be hidden: {html}");
+        }
+
+        // The same layouts with a clearance filled in.
+        let obtain_secret = none_needed.replacen("Obtain:</b></u></p>None", "Obtain:</b></span></u></p>Interim Secret", 1);
+        assert!(hidden(&obtain_secret, &["clearance"]));
+        assert!(hidden(&obtain_secret, &["interim secret"]));
+        let background_check = none_needed.replace("Required:</u></b></p>None", "Required:</u></b></p>SSBI (T5)");
+        assert!(hidden(&background_check, &["public trust"]));
+        assert!(!hidden(&background_check, &["clearance"]));
+        let secret = "<p><b>Security Clearance Type: </b></p>DoD Clearance: Secret<p><b>Security Clearance Status: </b></p>Active and existing security clearance required after day 1";
+        assert!(hidden(secret, &["security clearance"]));
+        // A "No" that answers the label before it says nothing about the next one.
+        assert!(hidden("<p>Relocation: No</p><p>Security clearance: Secret</p>", &["security clearance"]));
+        assert!(hidden("<p>Security Clearance: No lower than Secret</p>", &["security clearance"]));
+        assert!(hidden("<p>Security Clearance Required: Yes</p>", &["security clearance"]));
+        // One real requirement is enough, whatever else the posting says.
+        assert!(hidden("<p>No security clearance needed to apply.</p><p>You must obtain a security clearance within a year.</p>", &["security clearance"]));
+    }
+
+    #[test]
+    fn phrases_keep_symbols_that_are_part_of_a_name() {
+        assert!(hidden("<p>Five years of C++ and .NET.</p>", &["C++"]));
+        assert!(hidden("<p>Five years of C++ and .NET.</p>", &[".net"]));
+        assert!(!hidden("<p>Plan C is to grow net revenue.</p>", &["C++", ".NET"]));
+        assert!(hidden("<p>Rotating on call duty.</p>", &["on-call"]));
+    }
+
+    #[test]
+    fn either_hide_list_keeps_a_posting_off_the_board() {
+        let s = Settings {
+            exclude_keywords: vec!["intern".into()],
+            exclude_terms: vec!["security clearance".into()],
+            ..Settings::default()
+        };
+        assert_eq!(hidden_by("AI Intern", "", &s).as_deref(), Some("intern"));
+        assert_eq!(hidden_by("AI Engineer", "<p>Secret security clearance.</p>", &s).as_deref(), Some("security clearance"));
+        assert_eq!(hidden_by("Internal Tools Engineer", "<p>Remote.</p>", &s), None);
     }
 
     #[test]

@@ -16,13 +16,16 @@ use axum::http::header::{
 use axum::http::{HeaderMap, HeaderValue, Method, StatusCode};
 use axum::middleware::{self, Next};
 use axum::response::{IntoResponse, Response};
-use axum::routing::{get, post, put};
+use axum::routing::{get, patch, post, put};
 use axum::{Json, Router};
-use serde::Deserialize;
-use tower::ServiceExt;
+use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
+use tower::ServiceExt;
 
-use crate::model::{Attachment, Job, JobDetail, Note, STATUSES, Settings};
+use crate::db::{ColumnChange, Direction};
+use crate::model::{
+    Attachment, Column, HiddenCard, Job, JobDetail, MAX_COLUMN_LABEL, MAX_COLUMNS, Note, Settings,
+};
 use crate::sources::{decode_component, encode_component};
 use crate::state::AppState;
 use crate::{log_warn, login_item, scheduler};
@@ -54,6 +57,9 @@ pub fn router(state: Shared) -> Router {
         .route("/api/attachments/{id}", get(download_attachment).delete(delete_attachment))
         .route("/api/attachments/{id}/open", post(open_attachment))
         .route("/api/attachments/{id}/reveal", post(reveal_attachment))
+        .route("/api/columns", get(list_columns).post(add_column))
+        .route("/api/columns/{id}", patch(change_column).delete(delete_column))
+        .route("/api/hidden", get(hidden_cards))
         .route("/api/status", get(status))
         .route("/api/refresh", post(refresh))
         .route("/api/settings", get(get_settings).put(put_settings))
@@ -211,14 +217,106 @@ async fn move_job(
     Path(id): Path<i64>,
     Json(body): Json<MoveJob>,
 ) -> ApiResult<Json<Value>> {
-    if !STATUSES.contains(&body.status.as_str()) {
-        return Err(ApiError::bad_request(format!("unknown column: {}", body.status)));
+    if !state.db.column_exists(&body.status)? {
+        return Err(ApiError::bad_request("That column no longer exists."));
     }
     if !state.db.set_status(id, &body.status)? {
         return Err(ApiError::not_found("job"));
     }
     state.update_badge();
     Ok(Json(json!({ "ok": true })))
+}
+
+// ---- columns ------------------------------------------------------------------------
+
+async fn list_columns(State(state): State<Shared>) -> ApiResult<Json<Vec<Column>>> {
+    Ok(Json(state.db.columns()?))
+}
+
+/// Tidies a column name the user typed, or explains what is wrong with it.
+fn column_label(raw: &str) -> Result<String, String> {
+    let label = raw.split_whitespace().collect::<Vec<_>>().join(" ");
+    if label.is_empty() {
+        return Err("Give the column a name.".to_string());
+    }
+    if label.chars().any(char::is_control) {
+        return Err("A column name cannot contain control characters.".to_string());
+    }
+    if label.chars().count() > MAX_COLUMN_LABEL {
+        return Err(format!("A column name can be up to {MAX_COLUMN_LABEL} characters long."));
+    }
+    Ok(label)
+}
+
+fn name_taken(label: &str) -> ApiError {
+    ApiError::bad_request(format!("There is already a column called \u{201c}{label}\u{201d}."))
+}
+
+#[derive(Deserialize)]
+struct NewColumn {
+    label: String,
+}
+
+async fn add_column(State(state): State<Shared>, Json(body): Json<NewColumn>) -> ApiResult<Json<Vec<Column>>> {
+    let label = column_label(&body.label).map_err(ApiError::bad_request)?;
+    if state.db.columns()?.len() >= MAX_COLUMNS {
+        return Err(ApiError::bad_request(format!(
+            "The board can have up to {MAX_COLUMNS} columns. Delete one to add another."
+        )));
+    }
+    if state.db.add_column(&label)?.is_none() {
+        return Err(name_taken(&label));
+    }
+    Ok(Json(state.db.columns()?))
+}
+
+#[derive(Deserialize)]
+struct ColumnEdit {
+    label: Option<String>,
+    /// "left" or "right": moves the column one place.
+    #[serde(rename = "move")]
+    direction: Option<String>,
+}
+
+fn column_change(outcome: ColumnChange, label: &str) -> ApiResult<()> {
+    match outcome {
+        ColumnChange::Done | ColumnChange::AtEdge => Ok(()),
+        ColumnChange::NotFound => Err(ApiError::not_found("column")),
+        ColumnChange::Builtin => Err(ApiError::bad_request("The built-in columns cannot be changed.")),
+        ColumnChange::NameTaken => Err(name_taken(label)),
+    }
+}
+
+async fn change_column(
+    State(state): State<Shared>,
+    Path(id): Path<String>,
+    Json(body): Json<ColumnEdit>,
+) -> ApiResult<Json<Vec<Column>>> {
+    if let Some(raw) = &body.label {
+        let label = column_label(raw).map_err(ApiError::bad_request)?;
+        column_change(state.db.rename_column(&id, &label)?, &label)?;
+    }
+    if let Some(direction) = &body.direction {
+        let direction = match direction.as_str() {
+            "left" => Direction::Left,
+            "right" => Direction::Right,
+            other => return Err(ApiError::bad_request(format!("unknown direction: {other}"))),
+        };
+        column_change(state.db.move_column(&id, direction)?, "")?;
+    }
+    Ok(Json(state.db.columns()?))
+}
+
+async fn delete_column(State(state): State<Shared>, Path(id): Path<String>) -> ApiResult<Json<Value>> {
+    let (moved_to, moved) = match state.db.delete_column(&id)? {
+        Ok(result) => result,
+        Err(outcome) => {
+            column_change(outcome, "")?;
+            return Err(ApiError::not_found("column"));
+        }
+    };
+    state.update_badge();
+    Ok(Json(json!({ "columns": state.db.columns()?, "moved": moved, "moved_to": moved_to })))
 }
 
 // ---- notes --------------------------------------------------------------------------
@@ -410,7 +508,13 @@ async fn status(State(state): State<Shared>) -> ApiResult<Json<Value>> {
         "employers_file": state.paths.employers_file.display().to_string(),
         "log_file": state.paths.log_file.display().to_string(),
         "start_at_login": login_item::is_enabled(),
+        "hidden_cards": state.db.hidden_cards()?.len(),
     })))
+}
+
+/// The cards the hide lists are keeping off the board, and the entry behind each.
+async fn hidden_cards(State(state): State<Shared>) -> ApiResult<Json<Vec<HiddenCard>>> {
+    Ok(Json(state.db.hidden_cards()?))
 }
 
 async fn refresh(State(state): State<Shared>) -> Json<Value> {
@@ -442,9 +546,9 @@ fn describe_conflicts(settings: &Settings) -> Option<String> {
         .take(4)
         .map(|(role, hidden)| {
             if role.eq_ignore_ascii_case(hidden) {
-                format!("\u{201c}{role}\u{201d} is in both lists.")
+                format!("\u{201c}{role}\u{201d} is both wanted and hidden.")
             } else {
-                format!("\u{201c}{hidden}\u{201d} in the hide list would hide every \u{201c}{role}\u{201d} job.")
+                format!("Hiding \u{201c}{hidden}\u{201d} would hide every \u{201c}{role}\u{201d} job.")
             }
         })
         .collect();
@@ -452,15 +556,24 @@ fn describe_conflicts(settings: &Settings) -> Option<String> {
         lines.push(format!("\u{2026}and {} more.", conflicts.len() - 4));
     }
     Some(format!(
-        "These settings would hide the jobs you asked for. {} Remove them from the hide list; it is only for titles you do not want.",
+        "These settings would hide the jobs you asked for. {} Take them out of the hide lists; those are only for jobs you do not want.",
         lines.join(" ")
     ))
 }
 
-async fn put_settings(State(state): State<Shared>, Json(incoming): Json<Settings>) -> ApiResult<Json<Settings>> {
+#[derive(Serialize)]
+struct SavedSettings {
+    #[serde(flatten)]
+    settings: Settings,
+    /// How many cards already on the board the hide lists now keep out of sight.
+    hidden_cards: usize,
+}
+
+async fn put_settings(State(state): State<Shared>, Json(incoming): Json<Settings>) -> ApiResult<Json<SavedSettings>> {
     let settings = Settings {
         role_keywords: tidy(incoming.role_keywords),
         exclude_keywords: tidy(incoming.exclude_keywords),
+        exclude_terms: tidy(incoming.exclude_terms),
         regions: tidy(incoming.regions),
         configured: true,
     };
@@ -468,7 +581,14 @@ async fn put_settings(State(state): State<Shared>, Json(incoming): Json<Settings
         return Err(ApiError::bad_request(problem));
     }
     state.db.save_settings(&settings)?;
-    Ok(Json(settings))
+    // Postings the old settings left out get another look at the next check, and
+    // the hide lists are applied to the cards already here.
+    state.db.forget_settings_rejections()?;
+    let hidden_cards = state
+        .db
+        .apply_hide_lists(|title, description| crate::filter::hidden_by(title, description, &settings))?;
+    state.update_badge();
+    Ok(Json(SavedSettings { settings, hidden_cards }))
 }
 
 #[cfg(test)]
@@ -493,13 +613,29 @@ mod tests {
             ..Settings::default()
         };
         let message = describe_conflicts(&both).expect("a conflict");
-        assert!(message.contains("\u{201c}devops engineer\u{201d} is in both lists."), "{message}");
+        assert!(message.contains("\u{201c}devops engineer\u{201d} is both wanted and hidden."), "{message}");
+        let anywhere = Settings {
+            role_keywords: vec!["devops engineer".into()],
+            exclude_terms: vec!["devops".into()],
+            ..Settings::default()
+        };
+        let message = describe_conflicts(&anywhere).expect("a conflict");
+        assert!(message.contains("Hiding \u{201c}devops\u{201d} would hide every \u{201c}devops engineer\u{201d} job."), "{message}");
         let fine = Settings {
             role_keywords: vec!["devops engineer".into()],
             exclude_keywords: vec!["intern".into()],
             ..Settings::default()
         };
         assert!(describe_conflicts(&fine).is_none());
+    }
+
+    #[test]
+    fn column_names_are_tidied_and_checked() {
+        assert_eq!(column_label("  Phone   screen ").as_deref(), Ok("Phone screen"));
+        assert!(column_label("   ").is_err());
+        assert!(column_label(&"x".repeat(MAX_COLUMN_LABEL)).is_ok());
+        assert!(column_label(&"x".repeat(MAX_COLUMN_LABEL + 1)).is_err());
+        assert!(column_label("a\u{0}b").is_err());
     }
 
     #[test]

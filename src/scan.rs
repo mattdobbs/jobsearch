@@ -7,7 +7,8 @@
 //! 3. it matches the user's role and region settings;
 //! 4. it is not a job board's copy of a posting already on the board;
 //! 5. its description does not contradict the remote label;
-//! 6. the employer runs a hiring program, or the posting was placed on a board for
+//! 6. neither its title nor its description mentions a phrase the user has hidden;
+//! 7. the employer runs a hiring program, or the posting was placed on a board for
 //!    autistic job seekers, or the posting's own text welcomes neurodivergent or
 //!    disabled applicants.
 
@@ -137,6 +138,12 @@ async fn scan(state: &AppState) -> anyhow::Result<(usize, Vec<SourceStats>)> {
                 explain(&s.label, &candidate, "outside your role or region settings");
                 continue;
             }
+            // A hidden phrase in the title settles it before anything is downloaded.
+            if let Some(term) = filter::hidden_term(&candidate.title, "", &settings) {
+                s.filtered_out += 1;
+                explain(&s.label, &candidate, &format!("the title mentions \u{201c}{term}\u{201d}, which you have hidden"));
+                continue;
+            }
             let fingerprint = filter::fingerprint(&candidate.company, &candidate.title);
             if !candidate.direct && fingerprints.contains(&fingerprint) {
                 s.duplicate += 1;
@@ -207,15 +214,17 @@ async fn scan(state: &AppState) -> anyhow::Result<(usize, Vec<SourceStats>)> {
             s.deferred += 1;
             continue;
         }
-        // Only a rejection based on the full posting is remembered, and only when it
-        // does not depend on the user's settings.
-        let remember = |reason: &str| {
+        // Only a rejection based on the full posting is remembered, so that posting
+        // is not downloaded again on every check. One caused by the user's settings
+        // is remembered only until they change them.
+        let remember_as = |reason: &str, by_settings: bool| {
             if p.fetched_detail {
-                if let Err(e) = state.db.remember_rejected(&p.key, reason) {
+                if let Err(e) = state.db.remember_rejected(&p.key, reason, by_settings) {
                     log_warn!("could not record a rejected posting: {e}");
                 }
             }
         };
+        let remember = |reason: &str| remember_as(reason, false);
 
         if p.fetched_detail {
             // The detail page carries the employer's authoritative remote label.
@@ -228,6 +237,7 @@ async fn scan(state: &AppState) -> anyhow::Result<(usize, Vec<SourceStats>)> {
             if !filter::in_region(&c.location, &settings) {
                 s.filtered_out += 1;
                 explain(&s.label, &c, "outside your region settings");
+                remember_as("outside the region settings", true);
                 continue;
             }
         }
@@ -236,6 +246,13 @@ async fn scan(state: &AppState) -> anyhow::Result<(usize, Vec<SourceStats>)> {
             s.not_remote += 1;
             explain(&s.label, &c, &why);
             remember(&why);
+            continue;
+        }
+        if let Some(term) = filter::hidden_term(&c.title, &c.description_html, &settings) {
+            s.filtered_out += 1;
+            let why = format!("the posting mentions \u{201c}{term}\u{201d}, which you have hidden");
+            explain(&s.label, &c, &why);
+            remember_as(&why, true);
             continue;
         }
         if !c.direct && fingerprints.contains(&p.fingerprint) {
