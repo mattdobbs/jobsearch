@@ -295,6 +295,34 @@ dialog h3 { font-size: 1rem; margin-bottom: 6px; }
   margin: 14px 0 4px;
 }
 
+/* A checkbox setting: the box sits beside its label, which may wrap. */
+#settings-form label.check {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+#settings-form label.check input { flex: none; }
+
+/* A group of checkbox settings under one heading. */
+#settings-form fieldset.checks {
+  border: none;
+  padding: 0;
+  margin: 14px 0 0;
+  min-width: 0;
+}
+
+#settings-form fieldset.checks legend {
+  font-weight: 600;
+  padding: 0;
+  margin-bottom: 4px;
+}
+
+#settings-form fieldset.checks label.check {
+  font-weight: 400;
+  margin: 3px 0;
+}
+
 #column-name { width: 100%; }
 
 .position-row {

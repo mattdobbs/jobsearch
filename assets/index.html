@@ -34,9 +34,9 @@
   <form id="settings-form">
     <h2 id="settings-title">Settings</h2>
     <p id="settings-intro" class="intro" hidden>
-      Welcome. Every job on this board is remote. Tell it which roles you are looking for
-      and where you can work from, and it will only bring you those. You can change this
-      at any time.
+      Welcome. The board starts out showing remote jobs only. Tell it which roles you are
+      looking for and where you can work from, and it will only bring you those. You can
+      change any of this at any time.
     </p>
 
     <label for="set-roles">Show jobs with these in the title</label>
@@ -60,6 +60,26 @@
     <label for="set-regions">Where I can work from</label>
     <textarea id="set-regions" rows="2" placeholder="e.g. United States, USA, US"></textarea>
     <p class="hint">Many remote jobs are limited to certain countries. List every way yours is written. Jobs open worldwide, or with no country stated, are always kept. Leave empty for anywhere.</p>
+
+    <fieldset class="checks">
+      <legend>Kinds of job to show</legend>
+      <label class="check" for="set-remote"><input id="set-remote" type="checkbox" checked><span>Remote</span></label>
+      <label class="check" for="set-hybrid"><input id="set-hybrid" type="checkbox"><span>Hybrid</span></label>
+      <label class="check" for="set-onsite"><input id="set-onsite" type="checkbox"><span>On-site, and jobs that do not say where the work is done</span></label>
+    </fieldset>
+    <p class="hint">The board starts out remote-only. A job counts as remote only when its listing plainly says so and nothing in the posting says otherwise. Tick the others to see those jobs too; each card then says which kind it is. Changing this applies from the next check, which takes longer the more kinds are ticked. Cards already on the board stay.</p>
+
+    <div id="nearby-field" hidden>
+      <label for="set-nearby">Places I can travel to for hybrid and on-site jobs <span class="optional">(optional)</span></label>
+      <textarea id="set-nearby" rows="2" placeholder="e.g. Seattle, Bellevue, Washington"></textarea>
+      <p class="hint">A hybrid or on-site job is shown only when its location names one of these: a city, a state, or however your area is written. Remote jobs are not held to this. Leave empty for anywhere within “Where I can work from”.</p>
+    </div>
+
+    <label class="check" for="set-inclusive">
+      <input id="set-inclusive" type="checkbox" checked>
+      <span>Only show jobs from employers that welcome disabled and neurodivergent applicants</span>
+    </label>
+    <p class="hint">On: a job is shown only when its employer runs a neurodiversity hiring program, is on the disability inclusion index, posted it on an autism job board, or says so in the posting. Off: every job that matches the settings above is shown, and jobs from those employers keep their label. Changing this applies from the next check; cards already on the board stay.</p>
 
     <details>
       <summary>Employers and files</summary>

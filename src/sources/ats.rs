@@ -1,6 +1,7 @@
 //! Employers' own career sites, read through the public job-board APIs of the hiring
 //! systems they run on. Links from here are always the employer's direct listing.
 
+use std::collections::HashSet;
 use std::time::Duration;
 
 use anyhow::Context;
@@ -9,12 +10,14 @@ use serde_json::{Value, json};
 
 use super::{get_json, iso_from_epoch, iso_from_str, post_json, text};
 use crate::employers::{Employer, Mode};
-use crate::model::{Candidate, Inclusion, Remote};
+use crate::model::{Candidate, Inclusion, Remote, Workplaces};
 
 /// Workday lists 20 postings per page. These cap how deep one scan pages: further
-/// when the site's own remote filter was used, since every result is then relevant.
+/// when the site's own workplace filter was used, since every result is then
+/// relevant, and when reading the newest postings of every kind.
 const WORKDAY_MAX_SEARCHED: usize = 240;
 const WORKDAY_MAX_FILTERED: usize = 400;
+const WORKDAY_MAX_NEWEST: usize = 400;
 const WORKDAY_PAGE: usize = 20;
 
 pub fn source_id(employer: &Employer) -> String {
@@ -26,12 +29,14 @@ pub fn source_id(employer: &Employer) -> String {
     format!("{}:{}", employer.ats, key)
 }
 
-pub async fn fetch(http: &Client, employer: &Employer) -> anyhow::Result<Vec<Candidate>> {
+/// Reads one employer's postings. Greenhouse, Lever and Ashby send their whole list
+/// in one answer; a Workday site is asked only for the kinds of job in `wanted`.
+pub async fn fetch(http: &Client, employer: &Employer, wanted: Workplaces) -> anyhow::Result<Vec<Candidate>> {
     match employer.ats.as_str() {
         "greenhouse" => greenhouse(http, employer).await,
         "lever" => lever(http, employer).await,
         "ashby" => ashby(http, employer).await,
-        "workday" => workday(http, employer).await,
+        "workday" => workday(http, employer, wanted).await,
         other => anyhow::bail!("unknown ats \"{other}\" in employers.toml"),
     }
 }
@@ -105,8 +110,6 @@ async fn lever(http: &Client, employer: &Employer) -> anyhow::Result<Vec<Candida
     let jobs = body.as_array().context("Lever sent no job list")?;
     Ok(jobs
         .iter()
-        // Lever states the workplace type on every posting; anything but "remote" is skipped.
-        .filter(|job| job["workplaceType"].as_str() == Some("remote"))
         .map(|job| {
             let mut c = candidate(employer, text(job, "id"), text(job, "text"));
             let categories = &job["categories"];
@@ -133,7 +136,13 @@ async fn lever(http: &Client, employer: &Employer) -> anyhow::Result<Vec<Candida
                 &text(range, "currency"),
                 &text(range, "interval"),
             );
-            c.remote = Remote::Declared;
+            // Lever states the workplace type on a posting, unless it is "unspecified".
+            c.remote = match job["workplaceType"].as_str().unwrap_or_default().to_lowercase().as_str() {
+                "remote" => Remote::Declared,
+                "hybrid" => Remote::Hybrid,
+                "onsite" | "on-site" => Remote::OnSite,
+                _ => Remote::Unverified,
+            };
             c
         })
         .filter(keep)
@@ -152,11 +161,6 @@ async fn ashby(http: &Client, employer: &Employer) -> anyhow::Result<Vec<Candida
     Ok(jobs
         .iter()
         .filter(|job| job["isListed"].as_bool() != Some(false))
-        // Ashby states the workplace type; "Hybrid" and "OnSite" are skipped outright.
-        .filter(|job| match job["workplaceType"].as_str() {
-            Some(kind) => kind.eq_ignore_ascii_case("remote"),
-            None => job["isRemote"].as_bool() == Some(true),
-        })
         .map(|job| {
             let mut c = candidate(employer, text(job, "id"), text(job, "title"));
             let mut places = vec![text(job, "location")];
@@ -169,21 +173,41 @@ async fn ashby(http: &Client, employer: &Employer) -> anyhow::Result<Vec<Candida
             c.description_html = text(job, "descriptionHtml");
             c.posted_at = iso_from_str(&text(job, "publishedAt"));
             c.salary = text(&job["compensation"], "compensationTierSummary");
-            c.remote = Remote::Declared;
+            c.remote = ashby_workplace(job["workplaceType"].as_str(), job["isRemote"].as_bool());
             c
         })
         .filter(keep)
         .collect())
 }
 
+/// Ashby states the workplace type ("Remote", "Hybrid", "OnSite"). Older postings
+/// carry only a remote flag.
+fn ashby_workplace(kind: Option<&str>, is_remote: Option<bool>) -> Remote {
+    match (kind.unwrap_or_default().to_lowercase().as_str(), is_remote) {
+        ("remote", _) => Remote::Declared,
+        ("hybrid", _) => Remote::Hybrid,
+        ("onsite" | "on-site", _) => Remote::OnSite,
+        (_, Some(true)) => Remote::Declared,
+        (_, Some(false)) => Remote::OnSite,
+        (_, None) => Remote::Unverified,
+    }
+}
+
 // ---- Workday --------------------------------------------------------------------
 
-/// Workday career sites can hold tens of thousands of postings. Where a site has a
-/// workplace filter, the app asks it for exactly the postings the employer marks as
-/// fully remote. Otherwise it asks the site's search for "remote" and holds each hit
-/// to the same strict remote rules as everything else. Descriptions are not in the
-/// results; `detail_url` lets the scan fetch them for postings that get that far.
-async fn workday(http: &Client, employer: &Employer) -> anyhow::Result<Vec<Candidate>> {
+/// Workday career sites can hold tens of thousands of postings, so a site is asked
+/// only for the kinds of job the user wants, one kind at a time:
+///
+/// - where the site has a workplace filter with values for that kind, exactly the
+///   postings the employer marks that way;
+/// - otherwise, for remote and hybrid, the site's search for that word, with each
+///   hit held to the same strict rules as everything else;
+/// - otherwise, for on-site, the newest postings of every kind, since a posting
+///   that is on-site rarely says so.
+///
+/// Descriptions are not in the results; `detail_url` lets the scan fetch them for
+/// postings that get that far.
+async fn workday(http: &Client, employer: &Employer, wanted: Workplaces) -> anyhow::Result<Vec<Candidate>> {
     let api = format!("https://{}/wday/cxs/{}/{}", employer.host, employer.tenant, employer.site);
     let public = if employer.public_base.is_empty() {
         format!("https://{}/{}", employer.host, employer.site)
@@ -194,32 +218,56 @@ async fn workday(http: &Client, employer: &Employer) -> anyhow::Result<Vec<Candi
 
     // The first, unfiltered page says which filters the site offers.
     let overview = post_json(http, &jobs_url, &json!({ "appliedFacets": {}, "limit": 1, "offset": 0, "searchText": "" })).await?;
-    let (facets, search, by_filter, limit) = match remote_filter(&overview) {
-        Some((parameter, values)) => (json!({ parameter: values }), "", true, WORKDAY_MAX_FILTERED),
-        None => (json!({}), "remote", false, WORKDAY_MAX_SEARCHED),
-    };
+    let filter = workplace_filter(&overview);
 
-    let mut found = Vec::new();
-    let mut total = usize::MAX;
-    let mut offset = 0;
-    while offset < total.min(limit) {
-        let query = json!({ "appliedFacets": facets, "limit": WORKDAY_PAGE, "offset": offset, "searchText": search });
-        let page = post_json(http, &jobs_url, &query).await?;
-        // Only the first page reports the real total.
-        if offset == 0 {
-            total = page["total"].as_u64().unwrap_or(0) as usize;
+    let mut found: Vec<Candidate> = Vec::new();
+    let mut seen: HashSet<String> = HashSet::new();
+    for (kind, word, is_wanted) in [
+        (Remote::Declared, "remote", wanted.remote),
+        (Remote::Hybrid, "hybrid", wanted.hybrid),
+        (Remote::OnSite, "", wanted.onsite),
+    ] {
+        if !is_wanted {
+            continue;
         }
-        let postings = page["jobPostings"].as_array().cloned().unwrap_or_default();
-        if postings.is_empty() {
-            break;
-        }
-        for posting in &postings {
-            if let Some(c) = workday_posting(employer, &api, &public, posting, by_filter) {
-                found.push(c);
+        let values: Vec<&str> = filter
+            .iter()
+            .flat_map(|(_, values)| values)
+            .filter(|(_, value_kind)| *value_kind == kind)
+            .map(|(id, _)| id.as_str())
+            .collect();
+        let (facets, search, assumed, limit) = match &filter {
+            Some((parameter, _)) if !values.is_empty() => {
+                (json!({ (parameter.as_str()): values }), "", Some(kind), WORKDAY_MAX_FILTERED)
             }
+            _ if word.is_empty() => (json!({}), "", None, WORKDAY_MAX_NEWEST),
+            _ => (json!({}), word, None, WORKDAY_MAX_SEARCHED),
+        };
+
+        let mut total = usize::MAX;
+        let mut offset = 0;
+        while offset < total.min(limit) {
+            let query = json!({ "appliedFacets": facets, "limit": WORKDAY_PAGE, "offset": offset, "searchText": search });
+            let page = post_json(http, &jobs_url, &query).await?;
+            // Only the first page reports the real total.
+            if offset == 0 {
+                total = page["total"].as_u64().unwrap_or(0) as usize;
+            }
+            let postings = page["jobPostings"].as_array().cloned().unwrap_or_default();
+            if postings.is_empty() {
+                break;
+            }
+            for posting in &postings {
+                if let Some(c) = workday_posting(employer, &api, &public, posting, assumed) {
+                    // The passes overlap; the first one to find a posting keeps it.
+                    if seen.insert(c.external_id.clone()) {
+                        found.push(c);
+                    }
+                }
+            }
+            offset += WORKDAY_PAGE;
+            tokio::time::sleep(Duration::from_millis(300)).await;
         }
-        offset += WORKDAY_PAGE;
-        tokio::time::sleep(Duration::from_millis(300)).await;
     }
     Ok(found)
 }
@@ -227,33 +275,42 @@ async fn workday(http: &Client, employer: &Employer) -> anyhow::Result<Vec<Candi
 /// Reads one of Workday's workplace labels. Every employer words these its own way
 /// ("Remote", "100% Remote", "Fully Virtual Job", "Hybrid or 100% Remote",
 /// "Office Worker (NOT Remote)", "Flexible Work Arrangement"), so a label only counts
-/// as remote when it says so and names nothing else.
+/// as remote when it says so and names nothing else. One that offers hybrid beside
+/// remote, or says flexible, is read as hybrid.
 fn classify_workplace(label: &str) -> Remote {
-    const NOT_REMOTE: [&str; 11] = [
-        "hybrid", "not remote", "office", "onsite", "on-site", "on site", "flex", "campus", "field", "in person",
-        "in-person",
-    ];
+    const HYBRID: [&str; 2] = ["hybrid", "flex"];
+    const ON_SITE: [&str; 8] = ["office", "onsite", "on-site", "on site", "campus", "field", "in person", "in-person"];
     const REMOTE: [&str; 6] = ["remote", "virtual", "work from home", "telecommut", "home based", "home-based"];
     let label = label.trim().to_lowercase();
     if label.is_empty() || label.contains("not designated") || label.contains("unspecified") || label == "n/a" {
         return Remote::Unverified;
     }
-    if NOT_REMOTE.iter().any(|word| label.contains(word)) {
-        return Remote::No;
+    if HYBRID.iter().any(|word| label.contains(word)) {
+        return Remote::Hybrid;
+    }
+    // "Non-Remote Posting", "Remote: No", "Not Eligible for Remote": the word remote
+    // is there, and the label means the opposite.
+    let negated = label
+        .split(|c: char| !c.is_alphanumeric())
+        .any(|word| matches!(word, "no" | "non" | "not" | "ineligible" | "nonremote"));
+    if negated || ON_SITE.iter().any(|word| label.contains(word)) {
+        return Remote::OnSite;
     }
     if REMOTE.iter().any(|word| label.contains(word)) {
         return Remote::Declared;
     }
-    Remote::No
+    // A label in words of the employer's own that does not say remote.
+    Remote::OnSite
 }
 
 fn workday_label(value: &Value) -> Remote {
     classify_workplace(value.as_str().unwrap_or_default())
 }
 
-/// Finds the site's workplace filter, if it has one, and the values in it that mean
-/// fully remote. Returns the filter's parameter name and those value ids.
-fn remote_filter(overview: &Value) -> Option<(String, Vec<String>)> {
+/// Finds the site's workplace filter, if it has one. Returns the filter's parameter
+/// name and, for each of its values that says remote, hybrid or on-site, the value's
+/// id and which of those it says.
+fn workplace_filter(overview: &Value) -> Option<(String, Vec<(String, Remote)>)> {
     for facet in overview["facets"].as_array()? {
         let parameter = text(facet, "facetParameter");
         let name = format!("{parameter} {}", text(facet, "descriptor")).to_lowercase().replace('_', " ");
@@ -263,32 +320,31 @@ fn remote_filter(overview: &Value) -> Option<(String, Vec<String>)> {
         if parameter.is_empty() || !about_workplace {
             continue;
         }
-        let remote_values: Vec<String> = facet["values"]
+        let values: Vec<(String, Remote)> = facet["values"]
             .as_array()
             .into_iter()
             .flatten()
-            .filter(|value| classify_workplace(&text(value, "descriptor")) == Remote::Declared)
-            .map(|value| text(value, "id"))
-            .filter(|id| !id.is_empty())
+            .map(|value| (text(value, "id"), classify_workplace(&text(value, "descriptor"))))
+            .filter(|(id, kind)| !id.is_empty() && *kind != Remote::Unverified)
             .collect();
-        if !remote_values.is_empty() {
-            return Some((parameter, remote_values));
+        if !values.is_empty() {
+            return Some((parameter, values));
         }
     }
     None
 }
 
-/// `by_filter` is true when the posting came back from the site's own fully-remote
-/// filter, which then stands in for a label the result row may not repeat.
-fn workday_posting(employer: &Employer, api: &str, public: &str, posting: &Value, by_filter: bool) -> Option<Candidate> {
+/// `assumed` is set when the posting came back from the site's own workplace filter:
+/// what that filter was asked for then stands in for a label the result row may not
+/// repeat.
+fn workday_posting(employer: &Employer, api: &str, public: &str, posting: &Value, assumed: Option<Remote>) -> Option<Candidate> {
     let path = text(posting, "externalPath");
     if path.is_empty() {
         return None;
     }
     let remote = match workday_label(&posting["remoteType"]) {
-        Remote::No => return None,
-        Remote::Unverified if by_filter => Remote::Declared,
-        other => other,
+        Remote::Unverified => assumed.unwrap_or(Remote::Unverified),
+        labelled => labelled,
     };
 
     let id = posting["bulletFields"]
@@ -386,7 +442,8 @@ pub async fn workday_detail(http: &Client, url: &str, candidate: &mut Candidate)
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::filter::check_remote_labels;
+    use crate::filter::workplace_by_listing;
+    use crate::model::Workplace;
 
     fn employer() -> Employer {
         Employer {
@@ -411,7 +468,11 @@ mod tests {
     }
 
     fn parse(p: &Value) -> Option<Candidate> {
-        workday_posting(&employer(), "https://example.wd5.myworkdayjobs.com/wday/cxs/example/External", "https://example.wd5.myworkdayjobs.com/External", p, false)
+        workday_posting(&employer(), "https://example.wd5.myworkdayjobs.com/wday/cxs/example/External", "https://example.wd5.myworkdayjobs.com/External", p, None)
+    }
+
+    fn listed(c: &Candidate) -> Workplace {
+        workplace_by_listing(&c.title, &c.location, c.remote).0
     }
 
     #[test]
@@ -422,9 +483,11 @@ mod tests {
         assert_eq!(remote.url, "https://example.wd5.myworkdayjobs.com/External/job/MA---Springfield/Counsel_R-1");
         assert_eq!(remote.key(), "workday:example:R-1");
 
-        // Explicit hybrid / onsite labels are dropped before any other check.
-        assert!(parse(&posting("Remote Operations Specialist", "/job/GA-Atlanta/x_R-1", "GA Atlanta", Some("Hybrid"))).is_none());
-        assert!(parse(&posting("Engineer", "/job/GA-Atlanta/x_R-1", "GA Atlanta", Some("Onsite"))).is_none());
+        // An explicit hybrid or on-site label settles it, whatever the title says.
+        let hybrid = parse(&posting("Engineer - Remote", "/job/GA-Atlanta/x_R-1", "GA Atlanta", Some("Hybrid"))).unwrap();
+        assert_eq!((hybrid.remote, listed(&hybrid)), (Remote::Hybrid, Workplace::Hybrid));
+        let onsite = parse(&posting("Engineer - Remote", "/job/GA-Atlanta/x_R-1", "GA Atlanta", Some("Onsite"))).unwrap();
+        assert_eq!((onsite.remote, listed(&onsite)), (Remote::OnSite, Workplace::OnSite));
     }
 
     #[test]
@@ -432,72 +495,103 @@ mod tests {
         assert_eq!(workday_label(&json!("Remote")), Remote::Declared);
         assert_eq!(workday_label(&json!("Remote Home-Based")), Remote::Declared);
         assert_eq!(workday_label(&json!("Remote Customer-Based")), Remote::Declared);
-        assert_eq!(workday_label(&json!("Hybrid")), Remote::No);
-        assert_eq!(workday_label(&json!("Hybrid Remote")), Remote::No);
-        assert_eq!(workday_label(&json!("Onsite")), Remote::No);
-        assert_eq!(workday_label(&json!("Office - Flexible")), Remote::No);
-        assert_eq!(workday_label(&json!("Office Tech-Flex")), Remote::No);
+        assert_eq!(workday_label(&json!("Hybrid")), Remote::Hybrid);
+        assert_eq!(workday_label(&json!("Hybrid Remote")), Remote::Hybrid);
+        assert_eq!(workday_label(&json!("Onsite")), Remote::OnSite);
+        assert_eq!(workday_label(&json!("Office - Flexible")), Remote::Hybrid);
+        assert_eq!(workday_label(&json!("Office Tech-Flex")), Remote::Hybrid);
         assert_eq!(workday_label(&json!(null)), Remote::Unverified);
         assert_eq!(workday_label(&json!("")), Remote::Unverified);
         // Wordings seen on real career sites.
         for label in ["100% Remote", "Fully Remote", "Virtual Worker", "Fully Virtual Job", "Remote Eligible, USA"] {
             assert_eq!(classify_workplace(label), Remote::Declared, "{label}");
         }
+        // Offered beside remote, hybrid still means the job is not fully remote.
+        for label in ["Hybrid or 100% Remote", "Remote/Hybrid", "Remote or Hybrid", "Flexible Work Arrangement", "Hybrid Flex", "Hybrid Job"] {
+            assert_eq!(classify_workplace(label), Remote::Hybrid, "{label}");
+        }
         for label in [
             "Office Worker (NOT Remote)",
-            "Hybrid or 100% Remote",
-            "Remote/Hybrid",
-            "Remote or Hybrid",
-            "Flexible Work Arrangement",
+            // The word "remote", meaning the opposite.
+            "Non-Remote Posting",
+            "Non Remote",
+            "Not Remote",
+            "Remote: No",
+            "Not Eligible for Remote Work",
             "Onsite Position",
+            "Onsite Job",
             "Office Focused",
-            "Hybrid Flex",
             "Field Based",
             "On Campus",
             "Off Campus",
+            // Not a word for remote, so not remote.
+            "Client Location",
         ] {
-            assert_eq!(classify_workplace(label), Remote::No, "{label}");
+            assert_eq!(classify_workplace(label), Remote::OnSite, "{label}");
         }
         assert_eq!(classify_workplace("Not Designated - CW"), Remote::Unverified);
     }
 
     #[test]
-    fn the_sites_own_remote_filter_is_found() {
+    fn the_sites_own_workplace_filter_is_found() {
+        let value = |id: &str, kind: Remote| (id.to_string(), kind);
         let overview = json!({ "facets": [
             { "facetParameter": "jobFamilyGroup", "descriptor": "Job Category", "values": [{ "descriptor": "Remote Sensing", "id": "x" }] },
             { "facetParameter": "remoteType", "descriptor": "Remote Type", "values": [
                 { "descriptor": "Hybrid", "id": "h1" },
                 { "descriptor": "Hybrid or 100% Remote", "id": "h2" },
                 { "descriptor": "100% Remote", "id": "r1" },
+                { "descriptor": "Not Designated", "id": "n1" },
             ] },
         ] });
-        assert_eq!(remote_filter(&overview), Some(("remoteType".to_string(), vec!["r1".to_string()])));
+        assert_eq!(
+            workplace_filter(&overview),
+            Some(("remoteType".to_string(), vec![value("h1", Remote::Hybrid), value("h2", Remote::Hybrid), value("r1", Remote::Declared)]))
+        );
 
         let named_differently = json!({ "facets": [
             { "facetParameter": "Workplace_Arrangement", "descriptor": "Workplace Arrangement", "values": [
                 { "descriptor": "Remote", "id": "r" }, { "descriptor": "Hybrid", "id": "h" }, { "descriptor": "Office", "id": "o" },
             ] },
         ] });
-        assert_eq!(remote_filter(&named_differently), Some(("Workplace_Arrangement".to_string(), vec!["r".to_string()])));
+        assert_eq!(
+            workplace_filter(&named_differently),
+            Some(("Workplace_Arrangement".to_string(), vec![value("r", Remote::Declared), value("h", Remote::Hybrid), value("o", Remote::OnSite)]))
+        );
 
-        // A filter with no fully-remote value is no use.
+        // A filter can lack a fully-remote value; the site's search is used for that kind.
         let none_remote = json!({ "facets": [
             { "facetParameter": "remoteType", "descriptor": "Remote Type", "values": [
                 { "descriptor": "Office Worker (NOT Remote)", "id": "o" }, { "descriptor": "Remote or Hybrid", "id": "rh" },
             ] },
         ] });
-        assert_eq!(remote_filter(&none_remote), None);
-        assert_eq!(remote_filter(&json!({})), None);
+        let (_, values) = workplace_filter(&none_remote).unwrap();
+        assert!(values.iter().all(|(_, kind)| *kind != Remote::Declared));
+        assert_eq!(workplace_filter(&json!({})), None);
     }
 
     #[test]
-    fn a_posting_from_the_remote_filter_counts_as_declared() {
+    fn a_posting_from_the_workplace_filter_takes_the_kind_that_was_asked_for() {
         let unlabeled = posting("Systems Engineer", "/job/TX-Dallas/Systems-Engineer_R-1", "TX Dallas", None);
-        let listed = workday_posting(&employer(), "https://x/wday/cxs/x/External", "https://x/External", &unlabeled, true).unwrap();
-        assert_eq!(listed.remote, Remote::Declared);
-        // A row that carries its own non-remote label is still dropped.
+        let from = |assumed: Remote| workday_posting(&employer(), "https://x/wday/cxs/x/External", "https://x/External", &unlabeled, Some(assumed)).unwrap();
+        assert_eq!(from(Remote::Declared).remote, Remote::Declared);
+        assert_eq!(from(Remote::Hybrid).remote, Remote::Hybrid);
+        assert_eq!(listed(&from(Remote::OnSite)), Workplace::OnSite);
+        // A row that carries its own label keeps it.
         let hybrid = posting("Systems Engineer", "/job/TX-Dallas/Systems-Engineer_R-1", "TX Dallas", Some("Hybrid"));
-        assert!(workday_posting(&employer(), "https://x/wday/cxs/x/External", "https://x/External", &hybrid, true).is_none());
+        let row = workday_posting(&employer(), "https://x/wday/cxs/x/External", "https://x/External", &hybrid, Some(Remote::Declared)).unwrap();
+        assert_eq!(row.remote, Remote::Hybrid);
+    }
+
+    #[test]
+    fn ashby_and_lever_workplace_types_are_read() {
+        assert_eq!(ashby_workplace(Some("Remote"), Some(true)), Remote::Declared);
+        assert_eq!(ashby_workplace(Some("Hybrid"), Some(false)), Remote::Hybrid);
+        assert_eq!(ashby_workplace(Some("OnSite"), None), Remote::OnSite);
+        // Older postings carry only the flag.
+        assert_eq!(ashby_workplace(None, Some(true)), Remote::Declared);
+        assert_eq!(ashby_workplace(None, Some(false)), Remote::OnSite);
+        assert_eq!(ashby_workplace(None, None), Remote::Unverified);
     }
 
     #[test]
@@ -505,14 +599,14 @@ mod tests {
         // Remote named in the path only.
         let c = parse(&posting("Security Director", "/job/California---Remote/Security-Director_JR1", "14 Locations", None)).unwrap();
         assert_eq!(c.remote, Remote::Unverified);
-        assert!(check_remote_labels(&c.title, &c.location, c.remote).is_ok(), "{}", c.location);
+        assert_eq!(listed(&c), Workplace::Remote, "{}", c.location);
 
         // A search hit that merely mentions "remote" somewhere is not enough.
         let c = parse(&posting("ASIC Engineer", "/job/USA-CA-San-Jose/ASIC-Engineer_R2", "USA-CA San Jose", None)).unwrap();
-        assert!(check_remote_labels(&c.title, &c.location, c.remote).is_err());
+        assert_eq!(listed(&c), Workplace::Unstated);
 
-        // Mixed labels in the title are rejected.
+        // Mixed labels in the title are not remote.
         let c = parse(&posting("Network Engineer, Hybrid Remote & On-Site OK", "/job/All-Oklahoma/x_3", "6 Locations", None)).unwrap();
-        assert!(check_remote_labels(&c.title, &c.location, c.remote).is_err());
+        assert_eq!(listed(&c), Workplace::Hybrid);
     }
 }

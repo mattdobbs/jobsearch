@@ -1,15 +1,16 @@
 //! The rules that decide whether a posting becomes a card.
 //!
-//! Remote-only is a hard requirement, so the remote checks are deliberately strict:
-//! when a listing is ambiguous it is dropped. Missing a genuinely remote job is the
-//! acceptable failure; showing a hybrid or on-site one is not.
+//! The board starts out remote-only, so the remote checks are deliberately strict: a
+//! posting counts as remote only when its listing plainly says so and nothing in it
+//! says otherwise. Calling a genuinely remote job hybrid or unstated is the acceptable
+//! failure; calling a hybrid or on-site one remote is not.
 
 use std::collections::HashSet;
 use std::sync::LazyLock;
 
 use regex::Regex;
 
-use crate::model::{Remote, Settings};
+use crate::model::{Remote, Settings, Workplace};
 
 fn re(pattern: &str) -> Regex {
     Regex::new(pattern).expect("built-in regex is valid")
@@ -45,9 +46,14 @@ pub fn block_text(html: &str) -> String {
 
 // ---- remote ---------------------------------------------------------------
 
-/// Words in a title or location that mean the job is not fully remote.
-static NOT_REMOTE_LABEL: LazyLock<Regex> = LazyLock::new(|| {
-    re(r"(?i)\b(hybrid|on[- ]?site|in[- ]office|in[- ]person|office[- ]based)\b")
+/// A title or location that says hybrid, on its own or beside something else
+/// ("Remote or Hybrid"): the job is not fully remote.
+static HYBRID_LABEL: LazyLock<Regex> = LazyLock::new(|| re(r"(?i)\bhybrid\b"));
+
+/// Words in a title or location that mean the job is done at the employer's premises,
+/// "non-remote" among them: the word remote, meaning the opposite.
+static ONSITE_LABEL: LazyLock<Regex> = LazyLock::new(|| {
+    re(r"(?i)\b(on[- ]?site|in[- ]office|in[- ]person|office[- ]based|non[- ]?remote|not[- ]remote|no[- ]remote)\b")
 });
 
 /// A location field that names remote work. Locations describe a place, so any of
@@ -109,38 +115,64 @@ static REMOTE_AFFIRMED: LazyLock<Regex> = LazyLock::new(|| {
     ))
 });
 
-/// Checks the title and location. `Err` carries the reason the posting was dropped.
-pub fn check_remote_labels(title: &str, location: &str, remote: Remote) -> Result<(), &'static str> {
-    if NOT_REMOTE_LABEL.is_match(title) {
-        return Err("title says hybrid or on-site");
-    }
-    if NOT_REMOTE_LABEL.is_match(location) {
-        return Err("location says hybrid or on-site");
-    }
+/// Where the listing itself says the job is done: the source's own workplace field,
+/// the title and the location. Also returns what decided it.
+pub fn workplace_by_listing(title: &str, location: &str, remote: Remote) -> (Workplace, &'static str) {
     match remote {
-        Remote::Declared => Ok(()),
-        Remote::No => Err("the employer labels it as not remote"),
-        Remote::Unverified => {
-            if REMOTE_PLACE.is_match(location) || REMOTE_TITLE.is_match(title) {
-                Ok(())
-            } else {
-                Err("listing does not say remote")
-            }
-        }
+        Remote::Hybrid => return (Workplace::Hybrid, "the employer labels it hybrid"),
+        Remote::OnSite => return (Workplace::OnSite, "the employer labels it as on-site, or otherwise not remote"),
+        Remote::Declared | Remote::Unverified => {}
+    }
+    if HYBRID_LABEL.is_match(title) {
+        return (Workplace::Hybrid, "title says hybrid");
+    }
+    if HYBRID_LABEL.is_match(location) {
+        return (Workplace::Hybrid, "location says hybrid");
+    }
+    if ONSITE_LABEL.is_match(title) {
+        return (Workplace::OnSite, "title says on-site");
+    }
+    if ONSITE_LABEL.is_match(location) {
+        return (Workplace::OnSite, "location says on-site");
+    }
+    if remote == Remote::Declared || REMOTE_PLACE.is_match(location) || REMOTE_TITLE.is_match(title) {
+        (Workplace::Remote, "listing says remote")
+    } else {
+        (Workplace::Unstated, "listing does not say remote or hybrid")
     }
 }
 
-/// Checks the description text for phrases that contradict a remote label.
-pub fn check_remote_text(text: &str) -> Result<(), String> {
+/// What the description adds to a listing that reads as `listed`: the workplace it
+/// shows and the phrase that shows it, or `None` when it changes nothing.
+///
+/// A description can contradict a remote label, and can fill in for a listing that
+/// says nothing. It never overrules a listing that says hybrid or on-site, and it
+/// never makes a job remote: only the listing can do that.
+pub fn workplace_by_text(listed: Workplace, text: &str) -> Option<(Workplace, String)> {
+    if matches!(listed, Workplace::Hybrid | Workplace::OnSite) {
+        return None;
+    }
     if let Some(found) = NOT_REMOTE_TEXT.find(text) {
-        return Err(format!("description says \"{}\"", found.as_str()));
+        let phrase = found.as_str();
+        let lower = phrase.to_lowercase();
+        // Days in the office each week, or "not fully remote", describe a split week.
+        let split_week = ["hybrid", "week", "day", "fully"].iter().any(|word| lower.contains(word));
+        let workplace = if split_week { Workplace::Hybrid } else { Workplace::OnSite };
+        return Some((workplace, format!("description says \"{phrase}\"")));
     }
     if let Some(found) = HYBRID_COMPANY_TEXT.find(text) {
         if !REMOTE_AFFIRMED.is_match(text) {
-            return Err(format!("description says \"{}\"", found.as_str()));
+            return Some((Workplace::Hybrid, format!("description says \"{}\"", found.as_str())));
         }
     }
-    Ok(())
+    None
+}
+
+/// Where a posting says the job is done, going by the listing and then by the
+/// description.
+pub fn workplace(title: &str, location: &str, remote: Remote, description: &str) -> (Workplace, String) {
+    let (listed, why) = workplace_by_listing(title, location, remote);
+    workplace_by_text(listed, description).unwrap_or((listed, why.to_string()))
 }
 
 // ---- inclusion ------------------------------------------------------------
@@ -568,6 +600,16 @@ pub fn in_region(location: &str, settings: &Settings) -> bool {
         && (US_STATE.is_match(location) || US_STATE_CODE.is_match(location) || US_SUPERREGION.is_match(location))
 }
 
+/// True when a hybrid or on-site job is somewhere the user can travel to: its location
+/// names one of their places. With no places listed, anywhere in their regions will do.
+pub fn is_nearby(location: &str, settings: &Settings) -> bool {
+    if settings.nearby.is_empty() {
+        return true;
+    }
+    let lower = location.to_lowercase();
+    settings.nearby.iter().any(|place| contains_term(&lower, place))
+}
+
 // ---- identity ---------------------------------------------------------------
 
 static COMPANY_NOISE: LazyLock<Regex> = LazyLock::new(|| {
@@ -621,21 +663,26 @@ mod tests {
         hidden_term("Systems Engineer", html, &hiding(terms)).is_some()
     }
 
+    fn listed(title: &str, location: &str, remote: Remote) -> Workplace {
+        workplace_by_listing(title, location, remote).0
+    }
+
     #[test]
     fn declared_remote_passes_unless_labelled_otherwise() {
-        assert!(check_remote_labels("Backend Engineer", "USA", Remote::Declared).is_ok());
-        assert!(check_remote_labels("Backend Engineer (Hybrid)", "USA", Remote::Declared).is_err());
-        assert!(check_remote_labels("Backend Engineer", "Remote or Hybrid - NYC", Remote::Declared).is_err());
-        assert!(check_remote_labels("Onsite Support Engineer", "Austin", Remote::Declared).is_err());
-        assert!(check_remote_labels("Field Tech - On-Site", "", Remote::Declared).is_err());
-        assert!(check_remote_labels("Analyst", "In-office, Chicago", Remote::Declared).is_err());
+        assert_eq!(listed("Backend Engineer", "USA", Remote::Declared), Workplace::Remote);
+        assert_eq!(listed("Backend Engineer (Hybrid)", "USA", Remote::Declared), Workplace::Hybrid);
+        assert_eq!(listed("Backend Engineer", "Remote or Hybrid - NYC", Remote::Declared), Workplace::Hybrid);
+        assert_eq!(listed("Onsite Support Engineer", "Austin", Remote::Declared), Workplace::OnSite);
+        assert_eq!(listed("Field Tech - On-Site", "", Remote::Declared), Workplace::OnSite);
+        assert_eq!(listed("Analyst", "In-office, Chicago", Remote::Declared), Workplace::OnSite);
         // The employer's own label beats a title that says remote.
-        assert!(check_remote_labels("Software Engineer (REMOTE)", "Remote, USA", Remote::No).is_err());
+        assert_eq!(listed("Software Engineer (REMOTE)", "Remote, USA", Remote::OnSite), Workplace::OnSite);
+        assert_eq!(listed("Software Engineer (REMOTE)", "Remote, USA", Remote::Hybrid), Workplace::Hybrid);
     }
 
     #[test]
     fn unverified_needs_a_remote_label() {
-        let ok = |title: &str, location: &str| check_remote_labels(title, location, Remote::Unverified).is_ok();
+        let ok = |title: &str, location: &str| listed(title, location, Remote::Unverified) == Workplace::Remote;
         // Location carries the label.
         assert!(ok("Engineer", "Remote, United States"));
         assert!(ok("Engineer", "USA NH Remote Location"));
@@ -647,36 +694,78 @@ mod tests {
         assert!(ok("Account Manager - Remote", "Texas"));
         assert!(ok("Remote - Claims Adjuster", "Ohio"));
         assert!(ok("Fully Remote Paralegal", "Ohio"));
-        // No label at all.
-        assert!(!ok("Engineer", "San Jose, CA"));
-        assert!(!ok("Engineer", "14 Locations"));
+        // No label at all: the listing does not say.
+        assert_eq!(listed("Engineer", "San Jose, CA", Remote::Unverified), Workplace::Unstated);
+        assert_eq!(listed("Engineer", "14 Locations", Remote::Unverified), Workplace::Unstated);
         // "Remote" used as a subject, not a workplace.
-        assert!(!ok("Remote Sensing Scientist", "Boulder, CO"));
-        assert!(!ok("Scientist - Remote Sensing", "Boulder, CO"));
-        assert!(!ok("Remote Operations Center Specialist", "Atlanta, GA"));
-        // Mixed labels are dropped.
-        assert!(!ok("Network Engineer, Hybrid Remote & On-Site OK", "6 Locations"));
-        assert!(!ok("Engineer", "Remote / Hybrid"));
+        assert_eq!(listed("Remote Sensing Scientist", "Boulder, CO", Remote::Unverified), Workplace::Unstated);
+        assert_eq!(listed("Scientist - Remote Sensing", "Boulder, CO", Remote::Unverified), Workplace::Unstated);
+        assert_eq!(listed("Remote Operations Center Specialist", "Atlanta, GA", Remote::Unverified), Workplace::Unstated);
+        // "Remote" said in order to rule it out.
+        assert_eq!(listed("Materials Developer", "Beaverton, Oregon (Non-Remote Posting)", Remote::Unverified), Workplace::OnSite);
+        assert_eq!(listed("Claims Adjuster (Not Remote)", "Ohio", Remote::Unverified), Workplace::OnSite);
+        assert_eq!(listed("Engineer - No Remote", "Remote Office, Texas", Remote::Declared), Workplace::OnSite);
+        // A mix that includes hybrid is hybrid, never remote.
+        assert_eq!(listed("Network Engineer, Hybrid Remote & On-Site OK", "6 Locations", Remote::Unverified), Workplace::Hybrid);
+        assert_eq!(listed("Engineer", "Remote / Hybrid", Remote::Unverified), Workplace::Hybrid);
     }
 
     #[test]
     fn description_can_contradict_a_remote_label() {
-        assert!(check_remote_text("This is a fully remote role open to anyone in the US.").is_ok());
-        assert!(check_remote_text("Experience with hybrid cloud deployments required.").is_ok());
-        assert!(check_remote_text("This is a hybrid role based in our Boston office.").is_err());
-        assert!(check_remote_text("This position is on-site in Denver.").is_err());
-        assert!(check_remote_text("We expect three days per week in the office.").is_err());
-        assert!(check_remote_text("Please note this role is not remote.").is_err());
+        let says = |text: &str| workplace_by_text(Workplace::Remote, text).map(|(workplace, _)| workplace);
+        assert_eq!(says("This is a fully remote role open to anyone in the US."), None);
+        assert_eq!(says("Experience with hybrid cloud deployments required."), None);
+        assert_eq!(says("This is a hybrid role based in our Boston office."), Some(Workplace::Hybrid));
+        assert_eq!(says("This position is on-site in Denver."), Some(Workplace::OnSite));
+        assert_eq!(says("We expect three days per week in the office."), Some(Workplace::Hybrid));
+        assert_eq!(says("Please note this role is not remote."), Some(Workplace::OnSite));
+        assert_eq!(says("Please note this role is not fully remote."), Some(Workplace::Hybrid));
         // A company-wide phrase counts against the posting on its own...
-        assert!(check_remote_text("We follow a hybrid work model.").is_err());
-        assert!(check_remote_text("Our hybrid working environment keeps teams connected.").is_err());
+        assert_eq!(says("We follow a hybrid work model."), Some(Workplace::Hybrid));
+        assert_eq!(says("Our hybrid working environment keeps teams connected."), Some(Workplace::Hybrid));
         // ...unless the description states outright that this role is remote.
-        assert!(check_remote_text("This is a remote position open to candidates in the US. We embrace a flexible hybrid model across the company.").is_ok());
-        assert!(check_remote_text("This role is fully remote. Elsewhere we run a hybrid working model.").is_ok());
+        assert_eq!(says("This is a remote position open to candidates in the US. We embrace a flexible hybrid model across the company."), None);
+        assert_eq!(says("This role is fully remote. Elsewhere we run a hybrid working model."), None);
         // A statement about this job always wins over an affirmation elsewhere.
-        assert!(check_remote_text("We are 100% remote friendly. This is a hybrid role in Austin.").is_err());
-        assert!(check_remote_text("Fully remote teams exist, but this role has a hybrid schedule.").is_err());
-        assert!(check_remote_text("Candidates must relocate to Austin.").is_err());
+        assert_eq!(says("We are 100% remote friendly. This is a hybrid role in Austin."), Some(Workplace::Hybrid));
+        assert_eq!(says("Fully remote teams exist, but this role has a hybrid schedule."), Some(Workplace::Hybrid));
+        assert_eq!(says("Candidates must relocate to Austin."), Some(Workplace::OnSite));
+    }
+
+    #[test]
+    fn a_description_fills_in_for_a_listing_that_says_nothing() {
+        let says = |listed: Workplace, text: &str| workplace_by_text(listed, text).map(|(workplace, _)| workplace);
+        assert_eq!(says(Workplace::Unstated, "This role has a hybrid schedule."), Some(Workplace::Hybrid));
+        assert_eq!(says(Workplace::Unstated, "You must work on-site at our plant."), Some(Workplace::OnSite));
+        // Only the listing can make a job remote.
+        assert_eq!(says(Workplace::Unstated, "This is a fully remote role."), None);
+        // A listing that says hybrid or on-site is not second-guessed.
+        assert_eq!(says(Workplace::Hybrid, "You must work on-site at our plant."), None);
+        assert_eq!(says(Workplace::OnSite, "This role has a hybrid schedule."), None);
+
+        let (place, why) = workplace("Engineer", "Remote, USA", Remote::Unverified, "We expect three days per week in the office.");
+        assert_eq!(place, Workplace::Hybrid);
+        assert_eq!(why, "description says \"days per week in the office\"");
+        let (place, why) = workplace("Engineer", "Remote, USA", Remote::Unverified, "Join our distributed team.");
+        assert_eq!((place, why.as_str()), (Workplace::Remote, "listing says remote"));
+        assert_eq!(workplace("Engineer", "Austin, TX", Remote::Unverified, "Join our team.").0, Workplace::Unstated);
+    }
+
+    #[test]
+    fn hybrid_and_on_site_jobs_can_be_kept_to_places_nearby() {
+        let near = |places: &[&str]| Settings {
+            nearby: places.iter().map(|s| s.to_string()).collect(),
+            ..Settings::default()
+        };
+        // No places listed: anywhere will do.
+        assert!(is_nearby("Austin, TX", &near(&[])));
+        let seattle = near(&["Seattle", "Bellevue", "WA"]);
+        assert!(is_nearby("Seattle, Washington, United States of America", &seattle));
+        assert!(is_nearby("US - WA - Redmond", &seattle));
+        assert!(!is_nearby("Austin, TX", &seattle));
+        // A short entry has to be a whole word.
+        assert!(!is_nearby("Warsaw, Poland", &seattle));
+        assert!(!is_nearby("6 Locations", &seattle));
     }
 
     #[test]

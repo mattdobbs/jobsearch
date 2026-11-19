@@ -8,7 +8,7 @@ use rusqlite::{Connection, OptionalExtension, Row, params};
 
 use crate::model::{
     Attachment, BUILTIN_COLUMNS, Column, HiddenCard, Job, JobDetail, LAST_COLUMN, NEW_COLUMN, Note, Run,
-    Settings, SourceStats,
+    Settings, SourceStats, UNDECIDED_COLUMNS, Workplace,
 };
 
 const SCHEMA: &str = "
@@ -33,7 +33,9 @@ CREATE TABLE IF NOT EXISTS jobs (
     status_changed_at TEXT NOT NULL,
     direct            INTEGER NOT NULL DEFAULT 0,
     -- The hide-list entry keeping this card off the board; NULL when it is shown.
-    hidden_by         TEXT
+    hidden_by         TEXT,
+    -- Where the job is done: remote, hybrid, onsite or unstated.
+    workplace         TEXT NOT NULL DEFAULT 'remote'
 );
 CREATE INDEX IF NOT EXISTS jobs_fingerprint ON jobs(fingerprint);
 CREATE INDEX IF NOT EXISTS jobs_status ON jobs(status);
@@ -111,6 +113,7 @@ pub struct NewJob {
     pub evidence_url: String,
     pub posted_at: Option<String>,
     pub direct: bool,
+    pub workplace: Workplace,
 }
 
 pub struct Db {
@@ -119,7 +122,7 @@ pub struct Db {
 
 const JOB_COLUMNS: &str = "j.id, j.title, j.company, j.location, j.url, j.source, j.source_label,
     j.salary, j.reason, j.reason_kind, j.evidence_url, j.posted_at, j.found_at, j.status,
-    j.status_changed_at, j.direct,
+    j.status_changed_at, j.direct, j.workplace,
     (SELECT COUNT(*) FROM notes n WHERE n.job_id = j.id),
     (SELECT COUNT(*) FROM attachments a WHERE a.job_id = j.id)";
 
@@ -141,8 +144,9 @@ fn job_from_row(row: &Row) -> rusqlite::Result<Job> {
         status: row.get(13)?,
         status_changed_at: row.get(14)?,
         direct: row.get(15)?,
-        note_count: row.get(16)?,
-        attachment_count: row.get(17)?,
+        workplace: row.get(16)?,
+        note_count: row.get(17)?,
+        attachment_count: row.get(18)?,
     })
 }
 
@@ -233,6 +237,8 @@ impl Db {
         conn.pragma_update(None, "foreign_keys", "ON")?;
         conn.execute_batch(SCHEMA)?;
         add_column_if_missing(&conn, "jobs", "hidden_by", "TEXT")?;
+        // Every card from before this column existed is a remote job.
+        add_column_if_missing(&conn, "jobs", "workplace", "TEXT NOT NULL DEFAULT 'remote'")?;
         add_column_if_missing(&conn, "rejected", "by_settings", "INTEGER NOT NULL DEFAULT 0")?;
         for (position, (id, label)) in BUILTIN_COLUMNS.iter().enumerate() {
             conn.execute(
@@ -288,6 +294,16 @@ impl Db {
         self.string_set("SELECT fingerprint FROM jobs")
     }
 
+    /// Fingerprints of the jobs the user has dealt with: every card outside New and
+    /// Evaluating, whether that is Applied to, Pass or a column they added.
+    pub fn decided_fingerprints(&self) -> anyhow::Result<HashSet<String>> {
+        let [new, evaluating] = UNDECIDED_COLUMNS;
+        let conn = self.conn();
+        let mut stmt = conn.prepare("SELECT fingerprint FROM jobs WHERE status NOT IN (?1, ?2)")?;
+        let rows = stmt.query_map(params![new, evaluating], |r| r.get::<_, String>(0))?;
+        Ok(rows.collect::<Result<_, _>>()?)
+    }
+
     pub fn rejected_keys(&self) -> anyhow::Result<HashSet<String>> {
         self.string_set("SELECT dedupe_key FROM rejected")
     }
@@ -308,14 +324,28 @@ impl Db {
         Ok(())
     }
 
+    /// Lets every posting that was turned down be judged again. For a change to the
+    /// kinds of job wanted, which most rejections rest on.
+    pub fn forget_all_rejections(&self) -> anyhow::Result<()> {
+        self.conn().execute("DELETE FROM rejected", [])?;
+        Ok(())
+    }
+
+    /// Lets postings rejected for one particular reason be judged again, once that
+    /// reason no longer applies.
+    pub fn forget_rejections(&self, reason: &str) -> anyhow::Result<()> {
+        self.conn().execute("DELETE FROM rejected WHERE reason = ?1", params![reason])?;
+        Ok(())
+    }
+
     /// Returns false when a card with the same key already exists.
     pub fn insert_job(&self, job: &NewJob) -> anyhow::Result<bool> {
         let ts = now();
         let changed = self.conn().execute(
             "INSERT OR IGNORE INTO jobs (dedupe_key, fingerprint, title, company, location, url,
                 source, source_label, description, salary, reason, reason_kind, evidence_url,
-                posted_at, found_at, status, status_changed_at, direct)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, 'new', ?15, ?16)",
+                posted_at, found_at, status, status_changed_at, direct, workplace)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, 'new', ?15, ?16, ?17)",
             params![
                 job.dedupe_key,
                 job.fingerprint,
@@ -333,6 +363,7 @@ impl Db {
                 job.posted_at,
                 ts,
                 job.direct,
+                job.workplace.id(),
             ],
         )?;
         Ok(changed > 0)
@@ -565,7 +596,7 @@ impl Db {
             .query_row(
                 &format!("SELECT {JOB_COLUMNS}, j.description FROM jobs j WHERE j.id = ?1"),
                 params![id],
-                |r| Ok((job_from_row(r)?, r.get::<_, String>(18)?)),
+                |r| Ok((job_from_row(r)?, r.get::<_, String>(19)?)),
             )
             .optional()?;
         let Some((job, description)) = found else {
@@ -708,6 +739,7 @@ mod tests {
             evidence_url: String::new(),
             posted_at: None,
             direct: true,
+            workplace: Workplace::Remote,
         }
     }
 
@@ -826,6 +858,38 @@ mod tests {
     }
 
     #[test]
+    fn rejections_for_one_reason_can_be_forgotten() {
+        let db = Db::open_in_memory().unwrap();
+        db.remember_rejected("hybrid", "description says hybrid", false).unwrap();
+        db.remember_rejected("plain", "no inclusion language", false).unwrap();
+        db.forget_rejections("no inclusion language").unwrap();
+        let left = db.rejected_keys().unwrap();
+        assert!(left.contains("hybrid") && left.len() == 1);
+    }
+
+    #[test]
+    fn a_job_counts_as_decided_once_its_card_leaves_new_and_evaluating() {
+        let db = Db::open_in_memory().unwrap();
+        for (key, title) in [("a", "Engineer"), ("b", "Analyst"), ("c", "Designer"), ("d", "Writer"), ("e", "Tester")] {
+            db.insert_job(&job(key, title, "")).unwrap();
+        }
+        let interview = db.add_column("Interviewing").unwrap().expect("added");
+        // "a" stays in New.
+        db.set_status(id_of(&db, "Analyst"), "evaluating").unwrap();
+        db.set_status(id_of(&db, "Designer"), "applied").unwrap();
+        db.set_status(id_of(&db, "Writer"), "pass").unwrap();
+        db.set_status(id_of(&db, "Tester"), &interview.id).unwrap();
+
+        let mut decided: Vec<String> = db.decided_fingerprints().unwrap().into_iter().collect();
+        decided.sort();
+        assert_eq!(decided, ["c", "d", "e"]);
+
+        // Restoring a card from Pass makes its job open to new postings again.
+        db.set_status(id_of(&db, "Writer"), "new").unwrap();
+        assert!(!db.decided_fingerprints().unwrap().contains("d"));
+    }
+
+    #[test]
     fn a_database_from_an_earlier_version_is_brought_up_to_date() {
         let conn = Connection::open_in_memory().unwrap();
         conn.execute_batch(
@@ -847,12 +911,23 @@ mod tests {
         let db = Db::prepare(conn).unwrap();
         let jobs = db.list_jobs().unwrap();
         assert_eq!((jobs[0].title.as_str(), jobs[0].status.as_str()), ("Old Card", "pass"));
+        // Every card from before there was a choice is a remote job.
+        assert_eq!(jobs[0].workplace, "remote");
+        let hybrid = NewJob {
+            workplace: Workplace::Hybrid,
+            ..job("new", "New Card", "")
+        };
+        db.insert_job(&hybrid).unwrap();
+        let detail = db.get_job(id_of(&db, "New Card")).unwrap().unwrap();
+        assert_eq!(detail.job.workplace, "hybrid");
         assert_eq!(labels(&db), ["New", "Evaluating", "Applied to", "Pass"]);
         assert!(db.rejected_keys().unwrap().contains("gone"));
         db.forget_settings_rejections().unwrap();
         assert!(db.rejected_keys().unwrap().contains("gone"));
+        db.forget_all_rejections().unwrap();
+        assert!(db.rejected_keys().unwrap().is_empty());
         // Opening it a second time changes nothing.
         db.apply_hide_lists(|_, _| None).unwrap();
-        assert_eq!(db.list_jobs().unwrap().len(), 1);
+        assert_eq!(db.list_jobs().unwrap().len(), 2);
     }
 }

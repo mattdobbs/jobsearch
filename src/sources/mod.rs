@@ -2,7 +2,8 @@
 //!
 //! `ats` reads employers' own career sites (the direct listings); `boards` reads
 //! remote-only job boards and the Hire Autism board. Every fetcher only gathers
-//! postings — deciding which ones become cards happens in `scan`.
+//! postings and reports what each one's listing says about where the work is done —
+//! deciding which ones become cards happens in `scan`.
 
 mod ats;
 mod boards;
@@ -18,7 +19,7 @@ use tokio::sync::Semaphore;
 use tokio::task::JoinSet;
 
 use crate::employers::Employer;
-use crate::model::Candidate;
+use crate::model::{Candidate, Workplaces};
 
 /// Identifies the app honestly to the sites it reads. Contains nothing about the user.
 const USER_AGENT: &str = "jobsearch-board/0.1 (personal job-tracking app)";
@@ -46,8 +47,9 @@ pub fn http_client() -> anyhow::Result<Client> {
 }
 
 /// Fetches every source. A source that fails reports its error and yields nothing;
-/// it never stops the others.
-pub async fn fetch_all(http: &Client, employers: &[Employer]) -> Vec<SourceResult> {
+/// it never stops the others. `wanted` is the kinds of job the user asked for: the
+/// sources that have to be asked for one kind at a time are asked only for those.
+pub async fn fetch_all(http: &Client, employers: &[Employer], wanted: Workplaces) -> Vec<SourceResult> {
     let limit = Arc::new(Semaphore::new(CONCURRENCY));
     let mut tasks: JoinSet<SourceResult> = JoinSet::new();
 
@@ -55,7 +57,7 @@ pub async fn fetch_all(http: &Client, employers: &[Employer]) -> Vec<SourceResul
         let (http, employer, limit) = (http.clone(), employer.clone(), limit.clone());
         tasks.spawn(async move {
             let _permit = limit.acquire().await;
-            let outcome = ats::fetch(&http, &employer).await;
+            let outcome = ats::fetch(&http, &employer, wanted).await;
             finish(ats::source_id(&employer), format!("{} careers", employer.name), true, outcome)
         });
     }
@@ -64,7 +66,7 @@ pub async fn fetch_all(http: &Client, employers: &[Employer]) -> Vec<SourceResul
         let (http, limit) = (http.clone(), limit.clone());
         tasks.spawn(async move {
             let _permit = limit.acquire().await;
-            let outcome = boards::fetch(&http, board).await;
+            let outcome = boards::fetch(&http, board, wanted).await;
             finish(board.id.to_string(), board.label.to_string(), false, outcome)
         });
     }
@@ -108,8 +110,33 @@ fn host_of(url: &str) -> &str {
     url.split("://").nth(1).unwrap_or(url).split('/').next().unwrap_or(url)
 }
 
+/// A site answered that it is getting too many requests. The caller should ease off
+/// and come back, not treat the site as broken.
+#[derive(Debug)]
+pub struct RateLimited {
+    host: String,
+}
+
+impl std::fmt::Display for RateLimited {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{} asked for fewer requests (HTTP 429)", self.host)
+    }
+}
+
+impl std::error::Error for RateLimited {}
+
+pub fn is_rate_limited(error: &anyhow::Error) -> bool {
+    error.downcast_ref::<RateLimited>().is_some()
+}
+
 async fn check(response: reqwest::Response, url: &str) -> anyhow::Result<reqwest::Response> {
     let status = response.status();
+    if status == reqwest::StatusCode::TOO_MANY_REQUESTS {
+        return Err(RateLimited {
+            host: host_of(url).to_string(),
+        }
+        .into());
+    }
     anyhow::ensure!(status.is_success(), "{} answered HTTP {}", host_of(url), status.as_u16());
     Ok(response)
 }
@@ -275,6 +302,15 @@ pub async fn fetch_detail(http: &Client, candidate: &mut Candidate) -> anyhow::R
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_request_to_slow_down_is_told_apart_from_a_failure() {
+        let slow_down: anyhow::Error = RateLimited { host: "example.com".into() }.into();
+        assert!(is_rate_limited(&slow_down));
+        // Still recognised once a caller has added its own explanation.
+        assert!(is_rate_limited(&slow_down.context("could not read the posting")));
+        assert!(!is_rate_limited(&anyhow::anyhow!("example.com answered HTTP 500")));
+    }
 
     #[test]
     fn dates_are_normalised() {

@@ -27,6 +27,18 @@ const WHY_LABELS = {
   signal: 'Says so in the posting',
 };
 
+// The kind of a card that claims nothing about the employer. There are only any
+// while Settings is not keeping the board to inclusive employers.
+const NO_INCLUSION_CLAIM = 'none';
+
+// Where a job is done, as far as its posting shows.
+const WORKPLACE_LABELS = {
+  remote: 'Remote',
+  hybrid: 'Hybrid',
+  onsite: 'On-site',
+  unstated: 'Workplace not stated',
+};
+
 const PAGE_SIZE = 100;
 
 const state = {
@@ -35,6 +47,7 @@ const state = {
   filter: '',
   shown: {},
   status: null,
+  settings: null,
   wasScanning: false,
   openJob: null,
 };
@@ -173,7 +186,7 @@ function emptyNewNote() {
   if (!totals || totals.added > 0 || totals.filtered === 0) return null;
   return h('div', { class: 'empty-note' },
     `The last check read ${totals.read.toLocaleString()} postings. `
-    + `${totals.filtered.toLocaleString()} were remote but were left out by your settings.`,
+    + `${totals.filtered.toLocaleString()} were the kind of job you asked for but were left out by your other settings.`,
     h('div', null, h('button', { type: 'button', onclick: () => openSettings(false) }, 'Review settings')),
   );
 }
@@ -192,6 +205,26 @@ function quickMoves(status) {
 function columnLabel(id) {
   const column = state.columns.find((candidate) => candidate.id === id);
   return column ? column.label : id;
+}
+
+/**
+ * What a card says about where the job is done, or null when it need not say. On a
+ * board of nothing but remote jobs, which is how every board starts, saying
+ * "Remote" on each card would tell the reader nothing.
+ */
+function workplaceLabel(job) {
+  if (job.workplace === 'remote' && !boardIsMixed()) return null;
+  return WORKPLACE_LABELS[job.workplace] || null;
+}
+
+// Worked out once for each list of jobs the board loads, not once for each card.
+const mixedBoard = { jobs: null, mixed: false };
+function boardIsMixed() {
+  if (mixedBoard.jobs !== state.jobs) {
+    mixedBoard.jobs = state.jobs;
+    mixedBoard.mixed = state.jobs.some((job) => job.workplace !== 'remote');
+  }
+  return mixedBoard.mixed;
 }
 
 function renderBoard() {
@@ -269,6 +302,12 @@ function renderCard(job) {
   if (job.note_count) extras.push(`${job.note_count} note${job.note_count === 1 ? '' : 's'}`);
   if (job.attachment_count) extras.push(`${job.attachment_count} file${job.attachment_count === 1 ? '' : 's'}`);
   const when = job.posted_at ? `posted ${ago(job.posted_at)}` : `found ${ago(job.found_at)}`;
+  const chips = extras.map((text) => h('span', { class: 'chip' }, text));
+  const workplace = workplaceLabel(job);
+  if (workplace) chips.unshift(h('span', { class: 'chip workplace' }, workplace));
+  if (job.reason_kind !== NO_INCLUSION_CLAIM) {
+    chips.unshift(h('span', { class: `chip ${job.reason_kind}` }, WHY_LABELS[job.reason_kind] || 'Inclusive employer'));
+  }
 
   const card = h('article', {
     class: 'card',
@@ -279,10 +318,7 @@ function renderCard(job) {
     h('h3', { class: 'card-title' }, job.title),
     h('p', { class: 'card-company' }, job.company || 'Company not stated'),
     h('p', { class: 'card-meta' }, [job.location, when].filter(Boolean).join(' · ')),
-    h('div', { class: 'chips' },
-      h('span', { class: `chip ${job.reason_kind}` }, WHY_LABELS[job.reason_kind] || 'Inclusive employer'),
-      extras.map((text) => h('span', { class: 'chip' }, text)),
-    ),
+    chips.length > 0 && h('div', { class: 'chips' }, chips),
     h('div', { class: 'card-actions' },
       h('a', {
         class: 'button',
@@ -510,7 +546,7 @@ function renderJob() {
     h('div', { class: 'job-head' },
       h('div', null,
         h('h2', { id: 'job-title' }, job.title),
-        h('p', { class: 'job-sub' }, [job.company, job.location, job.salary].filter(Boolean).join(' · ')),
+        h('p', { class: 'job-sub' }, [job.company, job.location, workplaceLabel(job), job.salary].filter(Boolean).join(' · ')),
       ),
       h('button', { type: 'button', onclick: () => $('#job-dialog').close() }, 'Close'),
     ),
@@ -735,7 +771,7 @@ async function pollStatus() {
     const added = state.status.last_run ? state.status.last_run.added : 0;
     const totals = lastCheckTotals();
     if (added) toast(`${added} new job${added === 1 ? '' : 's'} added.`);
-    else if (totals && totals.filtered) toast(`Check finished. Nothing new matched your settings (${totals.filtered.toLocaleString()} remote postings left out).`);
+    else if (totals && totals.filtered) toast(`Check finished. Nothing new matched your settings (${totals.filtered.toLocaleString()} postings left out).`);
     else toast('Check finished. Nothing new.');
     loadJobs();
   }
@@ -762,6 +798,8 @@ function showLastRun() {
       status && status.scanning ? 'The first check is running now.' : 'No check has finished yet.'));
   } else {
     const column = (label, title) => h('th', { title }, label);
+    const wanted = state.settings ? state.settings.workplaces : null;
+    const remoteOnly = !wanted || (wanted.remote && !wanted.hybrid && !wanted.onsite);
     body.replaceChildren(
       h('p', { class: 'run-summary' },
         `Finished ${dateTime(last.finished_at)}. ${last.added} new job${last.added === 1 ? '' : 's'} added. `
@@ -773,10 +811,12 @@ function showLastRun() {
             column('Read', 'Postings the source returned'),
             column('Added', 'New cards'),
             column('Seen before', 'Already on the board, or already judged'),
-            column('Not remote', 'Dropped: the listing did not clearly say remote'),
-            column('Not inclusive', 'Dropped: nothing showed the employer welcomes neurodivergent or disabled applicants'),
+            remoteOnly
+              ? column('Not remote', 'Dropped: the listing did not clearly say remote')
+              : column('Other workplace', 'Dropped: not one of the kinds of job (remote, hybrid, on-site) that Settings asks for'),
+            column('Not inclusive', 'Dropped: nothing showed the employer welcomes neurodivergent or disabled applicants. Always 0 while Settings shows jobs from any employer'),
             column('Filtered', 'Dropped by your settings: role, region or a hide list'),
-            column('Duplicate', 'A board copy of a job already on the board'),
+            column('Duplicate', 'Another posting of a job whose card you have moved out of New and Evaluating, or a job board’s copy of a job already on the board'),
             column('Later', 'Left for the next check to keep requests polite'),
           )),
           h('tbody', null, last.sources.map((source) => (source.error
@@ -810,6 +850,12 @@ async function openSettings(firstRun) {
   $('#set-exclude').value = settings.exclude_keywords.join(', ');
   $('#set-terms').value = settings.exclude_terms.join(', ');
   $('#set-regions').value = settings.regions.join(', ');
+  $('#set-remote').checked = settings.workplaces.remote;
+  $('#set-hybrid').checked = settings.workplaces.hybrid;
+  $('#set-onsite').checked = settings.workplaces.onsite;
+  $('#set-nearby').value = settings.nearby.join(', ');
+  showNearbyField();
+  $('#set-inclusive').checked = settings.inclusive_only;
   showHiddenCards();
   if (state.status) {
     $('#path-employers').textContent = state.status.employers_file;
@@ -817,6 +863,11 @@ async function openSettings(firstRun) {
     $('#path-log').textContent = state.status.log_file;
   }
   $('#settings-dialog').showModal();
+}
+
+/** The places to travel to only matter once hybrid or on-site jobs are asked for. */
+function showNearbyField() {
+  $('#nearby-field').hidden = !($('#set-hybrid').checked || $('#set-onsite').checked);
 }
 
 /** Lists, in Settings, the cards the hide lists are keeping off the board. */
@@ -851,6 +902,13 @@ async function saveSettings(event) {
       exclude_keywords: splitList($('#set-exclude').value),
       exclude_terms: splitList($('#set-terms').value),
       regions: splitList($('#set-regions').value),
+      workplaces: {
+        remote: $('#set-remote').checked,
+        hybrid: $('#set-hybrid').checked,
+        onsite: $('#set-onsite').checked,
+      },
+      nearby: splitList($('#set-nearby').value),
+      inclusive_only: $('#set-inclusive').checked,
     });
   } catch (error) {
     // Shown in the dialog: a message behind it would go unseen.
@@ -861,6 +919,7 @@ async function saveSettings(event) {
     return;
   }
   $('#settings-dialog').close();
+  state.settings = saved;
   const hidden = saved.hidden_cards;
   toast(hidden
     ? `Saved. ${hidden} card${hidden === 1 ? ' is' : 's are'} now hidden by your hide lists. Checking for jobs…`
@@ -883,6 +942,8 @@ async function start() {
   $('#open-settings').addEventListener('click', () => openSettings(false));
   $('#settings-cancel').addEventListener('click', () => $('#settings-dialog').close());
   $('#settings-form').addEventListener('submit', saveSettings);
+  $('#set-hybrid').addEventListener('change', showNearbyField);
+  $('#set-onsite').addEventListener('change', showNearbyField);
   $('#add-column').addEventListener('click', () => openColumnDialog(null));
   $('#column-form').addEventListener('submit', saveColumn);
   $('#column-cancel').addEventListener('click', () => $('#column-dialog').close());
@@ -920,6 +981,7 @@ async function start() {
 
   try {
     const settings = await api('GET', '/api/settings');
+    state.settings = settings;
     if (!settings.configured && !linked) openSettings(true);
   } catch (_) { /* the status line already reports it */ }
 }

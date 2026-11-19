@@ -1,14 +1,18 @@
 # JobSearch
 
-A desktop app for macOS that looks for **remote** jobs at employers that actively
-hire disabled and neurodivergent people (ADHD, autism and others), and keeps them on
-a kanban board on your own Mac.
+A desktop app for macOS that looks for jobs at employers that actively hire disabled
+and neurodivergent people (ADHD, autism and others), and keeps them on a kanban board
+on your own Mac. It starts out showing **remote** jobs only.
+
+Both of those are settings. You can add hybrid and on-site jobs, and you can turn off
+the inclusive-employers rule to see jobs from any employer.
 
 - Checks for jobs twice a day, in the background.
 - Columns: **New**, **Evaluating**, **Applied to**, **Pass**, and any others you add.
 - Each card has notes, file attachments, a link to the posting, and the reason it is
   on your board.
-- Only ever shows postings whose listing says the job is remote.
+- Calls a job remote only when its listing says so. Hybrid and on-site jobs stay off
+  the board until you ask for them.
 - Everything is stored locally. Nothing about you is sent anywhere.
 
 ## Run it
@@ -38,6 +42,63 @@ has:
 Links to postings open in your browser. Attachments open in whichever app macOS uses
 for that kind of file.
 
+## Giving the app to other people
+
+`scripts/bundle.sh` signs the app for the Mac it was built on. Copied to another Mac,
+macOS will refuse to open it. `scripts/bundle.sh --release` makes a copy that opens
+anywhere without a warning: it signs the app with your Apple Developer ID, has Apple
+notarize it, and packs it as `dist/JobSearch-<version>.dmg`.
+
+That needs two things set up once, both tied to your Apple account:
+
+1. **A Developer ID Application certificate.** It comes with membership of the Apple
+   Developer Program, which is paid yearly. At developer.apple.com, under
+   Certificates, IDs & Profiles, add a certificate of the kind *Developer ID
+   Application*. It asks for a certificate signing request, which Keychain Access
+   makes (Certificate Assistant, then Request a Certificate From a Certificate
+   Authority, saved to disk). Download the certificate and double-click it. Only a
+   team's account holder can create this kind. When it is in place,
+   `security find-identity -v -p codesigning` lists it.
+2. **Notary credentials.** Create an app-specific password at account.apple.com,
+   under Sign-In and Security. Then run this in a terminal. It asks for your Apple ID
+   and that password, reads your team ID from the certificate, and has Apple's
+   `notarytool` save them in your keychain.
+
+   ```sh
+   scripts/notary-login.sh
+   ```
+
+If Apple refuses either step, look for a banner at developer.apple.com/account
+first. When Apple updates its licence agreement, the account holder has to accept it
+before certificates can be created or anything notarized.
+
+Then:
+
+```sh
+scripts/bundle.sh --release               # for Macs with Apple silicon
+scripts/bundle.sh --release --universal   # for Intel Macs as well
+```
+
+The script checks for the certificate before it builds anything. It then signs the
+app with the hardened runtime, sends it to Apple and attaches the ticket that comes
+back, builds and signs the disk image, sends that too, and finishes by asking
+Gatekeeper what it would say on someone else's Mac. Each of the two submissions
+usually takes a few minutes. Notarizing uploads the app to Apple; nothing from your
+board is in it.
+
+`--universal` needs the Intel build target once: `rustup target add
+x86_64-apple-darwin`. With several Developer ID certificates in the keychain, name
+the one to use in `JOBSEARCH_SIGN_IDENTITY`. A different credentials name goes in
+`JOBSEARCH_NOTARY_PROFILE`.
+
+Whoever you give it to gets their own empty board and their own settings. Yours stay
+in your Library folder and are not part of the app.
+
+Downloads are published at https://github.com/mattdobbs/jobsearch-releases, a public
+repository that holds only the disk images and a page describing the app, so that
+this repository can stay private. To publish a new version, add a release there and
+attach the `.dmg`.
+
 ## Where jobs come from
 
 | Source | What it is | When a job becomes a card | Card label |
@@ -64,6 +125,29 @@ The two employer lists are not equally strong:
 Jobs read from an employer's career site link straight to the employer's own
 listing. Jobs found on a board link to the board's listing.
 
+The "When a job becomes a card" column describes the board as it starts out. With
+**Only show jobs from employers that welcome disabled and neurodivergent
+applicants** turned off in Settings, every job from these sources that matches your
+settings becomes a card. A card from one of the employers above still carries
+its label; the others carry none, and say so when opened.
+
+### The same job twice
+
+Employers repost a job under a new number, and list one job once for each location.
+A posting is not added when a card with the same employer and the same title is
+already in a column other than **New** and **Evaluating**: **Applied to**, **Pass**,
+or a column you added. Once you have applied to a job or passed on it, it does not
+come back as new.
+
+While a card is still in New or Evaluating, another posting with its title is added
+as usual, because you have not decided anything yet. Cards already on the board are
+never removed by this rule. Restoring a card from Pass lets new postings of that job
+through again. The last check's **Duplicate** count includes the postings kept off
+this way.
+
+A job board's copy of a posting is also left out when the same job is already on the
+board, in any column.
+
 ### LinkedIn
 
 LinkedIn is not read. Tested on 2026-11-16, its public job search ignored the remote
@@ -73,9 +157,12 @@ account at risk of being restricted, which is a bad trade while job hunting. Rea
 employers' career sites directly gets the same postings at their source, with a
 dependable remote label.
 
-### The remote-only rule
+### Remote, hybrid and on-site
 
-A posting is shown only if:
+The board starts out remote-only. **Kinds of job to show** in Settings adds hybrid
+jobs, on-site jobs, or both. Untick Remote to leave remote jobs out.
+
+A posting counts as **remote** only if:
 
 1. the source marks it remote in a structured field, or the board lists remote jobs
    only, or the location or title plainly says remote; **and**
@@ -83,12 +170,50 @@ A posting is shown only if:
 3. the description does not say this job is hybrid or on-site (for example "this is
    a hybrid role", "three days per week in the office"); **and**
 4. the employer's own workplace label, where it has one, says remote and nothing
-   else. "Hybrid or 100% Remote", "Remote/Hybrid" and "Flexible" are all dropped,
+   else. "Hybrid or 100% Remote", "Remote/Hybrid" and "Flexible" are not remote,
    whatever the title says.
 
-When a listing is ambiguous it is dropped. That means some genuinely remote jobs
-will be missed. An employer can also label a job remote and still mean something
-else by it, so read the posting before applying.
+When a listing is ambiguous it is not counted as remote. That means some genuinely
+remote jobs will be missed. An employer can also label a job remote and still mean
+something else by it, so read the posting before applying.
+
+A posting that is not remote is one of:
+
+- **Hybrid** — its title, location or the employer's label says hybrid (on its own,
+  beside remote, or as "flexible"), or its description describes a split week:
+  "hybrid schedule", "three days per week in the office".
+- **On-site** — one of those says on-site, in-office or in-person, or the description
+  says the job is not remote or that you must relocate.
+- **Workplace not stated** — nothing says either way. These come with the on-site
+  jobs, because a posting that never mentions remote work is usually an on-site job.
+  The card says "Workplace not stated" so you can tell the two apart.
+
+Once a board holds more than remote jobs, every card says which kind it is.
+
+Hybrid and on-site jobs are tied to a place. **Places I can travel to**, which
+appears in Settings when either is ticked, keeps them to locations that name one of
+your entries: a city, a state, or however your area is written. Remote jobs are not
+held to it. Left empty, any hybrid or on-site job within "Where I can work from" is
+shown, which for a whole country is a great many.
+
+What is read for the extra kinds depends on the source:
+
+- Career sites on Greenhouse, Lever and Ashby send their whole list, so every job on
+  them is considered.
+- A Workday site can hold tens of thousands of postings, so it is asked for each
+  kind you ticked. Where the site has its own workplace filter, that is used.
+  Otherwise the site is searched for "remote" or "hybrid", and for on-site jobs the
+  newest 400 postings are read. On a large employer's site an on-site job is
+  therefore found while it is new, not if it was posted long ago.
+- The six remote job boards list remote jobs only. Hire Autism is asked for all of
+  its listings.
+
+A check takes longer with more kinds ticked: about eight minutes with all three,
+against two for remote only. It also reads many more full descriptions. At most 60
+are read from one site in one check, with a pause between them, and a site that says
+it is getting too many requests is left alone until the next check. The rest wait
+their turn, shown as **Later** in the last check, so the first few checks after
+ticking a new kind keep adding cards.
 
 ## Columns
 
@@ -119,13 +244,20 @@ with the buttons on the card: one for the next column along, and **Pass**.
 - **Where I can work from** — for remote jobs limited to certain countries. Jobs open
   worldwide, or that name no country, are always kept. Listing the United States also
   matches postings that name only a US state, or a region such as "NAMER".
+- **Kinds of job to show** — Remote, Hybrid, and On-site. Remote only to begin with.
+  See "Remote, hybrid and on-site" above.
+- **Places I can travel to** — shown once Hybrid or On-site is ticked. A hybrid or
+  on-site job has to name one of these places.
+- **Only show jobs from employers that welcome disabled and neurodivergent
+  applicants** — on to begin with. Turn it off to see every job that matches the
+  settings above, whoever the employer is.
 
 If a check finds postings but your settings leave all of them out, the New column
 says so and links to Settings.
 
-Changes to roles and places apply from the next check, and jobs already on the board
-stay there. The two hide lists also apply to the board straight away, as described
-next.
+Changes to roles, places, kinds of job and the inclusive-employers setting apply from
+the next check, and jobs already on the board stay there. The two hide lists also apply to the
+board straight away, as described next.
 
 ### Hiding by phrase
 

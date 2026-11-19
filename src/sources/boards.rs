@@ -1,5 +1,6 @@
 //! Job boards. Six list remote jobs only; Hire Autism is a board for autistic job
-//! seekers and is asked for its remote listings.
+//! seekers and is asked for its remote listings, or for all of them when the user
+//! also wants hybrid or on-site jobs.
 //!
 //! Board postings carry no claim about the employer, so (Hire Autism aside) each one
 //! has to earn its place through what the posting itself says.
@@ -15,7 +16,7 @@ use serde_json::Value;
 
 use super::{encode_component, get_json, get_text, iso_from_epoch, iso_from_str, salary_range, text};
 use crate::filter::plain_text;
-use crate::model::{Candidate, Inclusion, Remote};
+use crate::model::{Candidate, Inclusion, Remote, Workplaces};
 
 #[derive(Debug, Clone, Copy)]
 pub struct Board {
@@ -33,9 +34,9 @@ pub const ALL: [Board; 7] = [
     Board { id: "workingnomads", label: "Working Nomads" },
 ];
 
-pub async fn fetch(http: &Client, board: Board) -> anyhow::Result<Vec<Candidate>> {
+pub async fn fetch(http: &Client, board: Board, wanted: Workplaces) -> anyhow::Result<Vec<Candidate>> {
     let found = match board.id {
-        "hireautism" => hire_autism(http, board).await?,
+        "hireautism" => hire_autism(http, board, wanted).await?,
         "remotive" => remotive(http, board).await?,
         "remoteok" => remote_ok(http, board).await?,
         "jobicy" => jobicy(http, board).await?,
@@ -325,14 +326,14 @@ fn parse_hire_autism_listings(html: &str) -> Vec<HireAutismListing> {
 }
 
 /// Hire Autism is run by the Organization for Autism Research; employers post there
-/// specifically to reach autistic candidates. Its search is asked for remote listings,
-/// and each listing's own remote flag is then checked as well.
-async fn hire_autism(http: &Client, board: Board) -> anyhow::Result<Vec<Candidate>> {
+/// specifically to reach autistic candidates. Its search is asked for remote listings
+/// unless the user wants other kinds too, and each listing's own remote flag is then
+/// checked as well.
+async fn hire_autism(http: &Client, board: Board, wanted: Workplaces) -> anyhow::Result<Vec<Candidate>> {
+    let remote_only = if wanted.hybrid || wanted.onsite { "" } else { "&remote_position=true" };
     let mut listings = Vec::new();
     for page in 1..=5 {
-        let url = format!(
-            "https://www.hireautism.org/jm-ajax/get_listings/?per_page=100&page={page}&remote_position=true"
-        );
+        let url = format!("https://www.hireautism.org/jm-ajax/get_listings/?per_page=100&page={page}{remote_only}");
         let body = get_json(http, &url).await?;
         listings.extend(parse_hire_autism_listings(body["html"].as_str().unwrap_or_default()));
         if page >= body["max_num_pages"].as_i64().unwrap_or(1) {
@@ -343,18 +344,20 @@ async fn hire_autism(http: &Client, board: Board) -> anyhow::Result<Vec<Candidat
         return Ok(Vec::new());
     }
 
-    // Descriptions and the per-listing remote flag come from the site's content API.
-    // If that call fails the listings are still usable; they just have to prove they
-    // are remote through their location text.
-    let ids: Vec<&str> = listings.iter().map(|l| l.id.as_str()).take(100).collect();
-    let details_url = format!(
-        "https://www.hireautism.org/wp-json/wp/v2/job-listings?per_page=100&include={}",
-        ids.join(",")
-    );
-    let details: HashMap<String, Value> = match get_json(http, &details_url).await {
-        Ok(Value::Array(items)) => items.into_iter().map(|item| (text(&item, "id"), item)).collect(),
-        _ => HashMap::new(),
-    };
+    // Descriptions and the per-listing remote flag come from the site's content API,
+    // a hundred listings at a time. If a call fails the listings are still usable;
+    // they just have to show where the work is done through their location text.
+    let ids: Vec<&str> = listings.iter().map(|l| l.id.as_str()).collect();
+    let mut details: HashMap<String, Value> = HashMap::new();
+    for batch in ids.chunks(100) {
+        let details_url = format!(
+            "https://www.hireautism.org/wp-json/wp/v2/job-listings?per_page=100&include={}",
+            batch.join(",")
+        );
+        if let Ok(Value::Array(items)) = get_json(http, &details_url).await {
+            details.extend(items.into_iter().map(|item| (text(&item, "id"), item)));
+        }
+    }
 
     Ok(listings
         .into_iter()

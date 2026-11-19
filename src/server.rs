@@ -28,7 +28,7 @@ use crate::model::{
 };
 use crate::sources::{decode_component, encode_component};
 use crate::state::AppState;
-use crate::{log_warn, login_item, scheduler};
+use crate::{log_warn, login_item, scan, scheduler};
 
 const INDEX_HTML: &str = include_str!("../assets/index.html");
 const APP_JS: &str = include_str!("../assets/app.js");
@@ -575,15 +575,31 @@ async fn put_settings(State(state): State<Shared>, Json(incoming): Json<Settings
         exclude_keywords: tidy(incoming.exclude_keywords),
         exclude_terms: tidy(incoming.exclude_terms),
         regions: tidy(incoming.regions),
+        workplaces: incoming.workplaces,
+        nearby: tidy(incoming.nearby),
+        inclusive_only: incoming.inclusive_only,
         configured: true,
     };
+    if !settings.workplaces.any() {
+        return Err(ApiError::bad_request(
+            "Choose at least one kind of job to show: remote, hybrid or on-site.",
+        ));
+    }
     if let Some(problem) = describe_conflicts(&settings) {
         return Err(ApiError::bad_request(problem));
     }
+    let previous = state.db.settings();
     state.db.save_settings(&settings)?;
     // Postings the old settings left out get another look at the next check, and
     // the hide lists are applied to the cards already here.
     state.db.forget_settings_rejections()?;
+    if settings.workplaces != previous.workplaces {
+        // Nearly every posting turned down was turned down for where the work is done.
+        state.db.forget_all_rejections()?;
+    } else if !settings.inclusive_only {
+        // So do the ones turned down only for saying nothing about inclusion.
+        state.db.forget_rejections(scan::NO_INCLUSION_SIGNAL)?;
+    }
     let hidden_cards = state
         .db
         .apply_hide_lists(|title, description| crate::filter::hidden_by(title, description, &settings))?;
