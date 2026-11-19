@@ -94,10 +94,9 @@ the one to use in `JOBSEARCH_SIGN_IDENTITY`. A different credentials name goes i
 Whoever you give it to gets their own empty board and their own settings. Yours stay
 in your Library folder and are not part of the app.
 
-Downloads are published at https://github.com/mattdobbs/jobsearch-releases, a public
-repository that holds only the disk images and a page describing the app, so that
-this repository can stay private. To publish a new version, add a release there and
-attach the `.dmg`.
+Downloads are published at https://github.com/mattdobbs/jobsearch-releases, a
+repository that holds only the disk images and a page for people who want to install
+the app. To publish a new version, add a release there and attach the `.dmg`.
 
 ## Where jobs come from
 
